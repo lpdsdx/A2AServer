@@ -254,11 +254,11 @@ function ChatInterface({ agentCard }) {
                   </button>
                   {!isThinkingCollapsed[msg.id] && (
                     <div className="mt-2 p-3 bg-gray-100 rounded-lg text-sm text-gray-600">
-                      <div className="mt-2 p-3 bg-gray-100 rounded-lg text-sm text-gray-600">
-                        <p className="whitespace-pre-wrap">
-                          {thinkingMessages[msg.id].join('')}
-                        </p>
-                      </div>
+                    <div className="mt-2 p-3 bg-gray-100 rounded-lg text-sm text-gray-600">
+                      <p className="whitespace-pre-wrap">
+                      {thinkingMessages[msg.id]?.join('').replace(/\\\\n/g, '\\n').replace(/\\n/g, '\n')}
+                      </p>
+                    </div>
                     </div>
                   )}
                 </div>
