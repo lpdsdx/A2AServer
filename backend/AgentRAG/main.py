@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 @click.option("--model", "model_name", default="deepseek-chat",help="使用的模型名称（如 deepseek-chat）")
 @click.option("--provider", "provider", default="deepseek", help="模型提供方名称（如 deepseek、openai 等）")
 @click.option("--mcp_config", "mcp_config_path", default="mcp_config.json",help="MCP 配置文件路径（默认为 mcp_config.json）")
-def main(host, port, agent_prompt_file, model_name, provider, mcp_config_path):
+@click.option("--agent_url", "agent_url", default="",help="Agent Card中对外展示和访问的地址")
+def main(host, port, agent_prompt_file, model_name, provider, mcp_config_path, agent_url=""):
     """启动A2A Server
     host: 启动的Agent的主机
     port: 启动的端口
@@ -50,17 +51,20 @@ def main(host, port, agent_prompt_file, model_name, provider, mcp_config_path):
                     "解释下LNG"
                 ]
             )
+        if not agent_url:
+            agent_url = f"http://{host}:{port}/"
         # 包括 agent 的名字、描述、接口 URL、支持的输入输出格式、版本号等
         agent_card = AgentCard(
             name="RAGAssistant",
             description="能够进行检索问答的助手",
-            url=f"http://{host}:{port}/",
+            url=agent_url,
             version="1.0.0",
             defaultInputModes=input_mode,
             defaultOutputModes=output_mode,
             capabilities=capabilities,
             skills=[skill],
         )
+        print(f"AgentCard信息: {agent_card}")
         agent = BasicAgent(config_path=mcp_config_path, model_name=model_name, prompt_file=agent_prompt_file, provider=provider)
         # 启动 A2A 服务器
         server = A2AServer(

@@ -17,5 +17,5 @@
 ## 问题总结
 1. Deepseek官方Deepseek-R1模型不支持函数调用，因此使用Deepseek的R1模型会报错。但是火山引擎的deepseek-r1模型可以支持函数调用和思考，推荐。
 2. 保持传入Agent的会话的session_id的唯一，这是必须的。
-
+3. Agent Card中的url是最终对外提供的接口，当前端访问时，会访问这个Agent Card中的地址，可以按需传入。
 请查阅相应的文档以获取更详细的信息。
