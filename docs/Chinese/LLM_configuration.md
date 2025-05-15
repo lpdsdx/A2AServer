@@ -27,7 +27,8 @@
 ## Bytedance，豆包供应商
 1.  在你的项目中创建 `.env` 文件，并添加 `BYTEDANCE_API_KEY` 环境变量，值为你的 Bytedance API Key。
 2.  运行命令：`python main.py --provider bytedance --model doubao-1-5-pro-32k` 或者 `python main.py --provider bytedance --model deepseek-v3`
-3.  或者思考模型: `python main.py --provider bytedance --model deepseek-r1-250120`
+3.  或者思考模型: `python main.py --provider bytedance --model deepseek-r1-250120`  或者 `python main.py --provider bytedance --model doubao-1.5-thinking-pro-250415`
+
 ## VLLM模型
 1.  在你的项目中创建 `.env` 文件中需要添加
 ```
