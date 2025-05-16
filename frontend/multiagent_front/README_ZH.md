@@ -19,8 +19,7 @@ npm install
 ```
 
 ### 配置环境变量
-检查项目根目录下的 .env 文件。
-
+检查项目根目录下的 .env 文件，确保.env文件存在。
 确认 REACT_APP_HOSTAGENT_API 环境变量的值与你的 HostAgentAPI 服务的端口一致。例如：
 ```
 REACT_APP_HOSTAGENT_API=http://127.0.0.1:13000
