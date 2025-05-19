@@ -330,7 +330,8 @@ class BasicAgent:
                 yield {
                     "is_task_complete": True,  # Indicate it's an intermediate part
                     "require_user_input": False,
-                    "content": " "
+                    "content": " ",
+                    "type": "normal" # 参照 AgentTaskManager._stream_generator 条件判断逻辑修改，让 lastchunk 能够为true
                 }
             except Exception as e:
                 logger.error(f"Error during processing: {traceback.format_exc()}")
