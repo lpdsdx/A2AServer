@@ -263,6 +263,7 @@ class MCPClient:
                 del self.responses[rid]
                 return resp
             timeout = os.getenv("MCP_TIMEOUT", 8)  #工具的最大超时时间
+            timeout = int(timeout)  #工具的最大超时时间
             start_time = asyncio.get_event_loop().time()
             response = await asyncio.wait_for(wait_for_response(), timeout=timeout)
             elapsed = asyncio.get_event_loop().time() - start_time
