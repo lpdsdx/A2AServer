@@ -3,6 +3,7 @@ Core client functionality
 """
 
 import os
+import time
 import sys
 import json
 import asyncio
@@ -106,6 +107,8 @@ class MCPClient:
         self.server_capabilities = {}
         self._shutdown = False
         self._cleanup_lock = asyncio.Lock()
+        self._cleanup_task = None
+        self._response_ttl = 60  # 响应保留 60s
 
     async def _receive_loop(self):
         if not self.process or self.process.stdout.at_eof():
@@ -126,7 +129,8 @@ class MCPClient:
     def _process_message(self, message: dict):
         if "jsonrpc" in message and "id" in message:
             if "result" in message or "error" in message:
-                self.responses[message["id"]] = message
+                if "result" in message or "error" in message:
+                    self.responses[message["id"]] = (message, time.time())
             else:
                 # request from server, not implemented
                 resp = {
@@ -164,10 +168,26 @@ class MCPClient:
                 env=env_vars
             )
             self.receive_task = asyncio.create_task(self._receive_loop())
-            return await self._perform_initialize()
+            ok = await self._perform_initialize()
+            # 启动定期清理任务
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            return ok
         except Exception:
             return False
 
+    async def _cleanup_loop(self):
+        """定期清理过期响应"""
+        try:
+            while not self._shutdown:
+                now = time.time()
+                # 列出所有超时 id
+                stale = [rid for rid, (_, ts) in self.responses.items()
+                         if now - ts > self._response_ttl]
+                for rid in stale:
+                    self.responses.pop(rid, None)
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            pass
     async def _perform_initialize(self):
         self.request_id += 1
         req_id = self.request_id
@@ -190,7 +210,7 @@ class MCPClient:
         timeout = 10  # Increased timeout to 10 seconds
         while asyncio.get_event_loop().time() - start < timeout:
             if req_id in self.responses:
-                resp = self.responses[req_id]
+                resp, _ = self.responses[req_id]
                 del self.responses[req_id]
                 if "error" in resp:
                     logger.error(f"Server {self.server_name}: Initialize error: {resp['error']}")
@@ -224,7 +244,7 @@ class MCPClient:
         timeout = 10  # Increased timeout to 10 seconds
         while asyncio.get_event_loop().time() - start < timeout:
             if rid in self.responses:
-                resp = self.responses[rid]
+                resp, _ = self.responses[rid]  #响应和时间戳
                 del self.responses[rid]
                 if "error" in resp:
                     logger.error(f"Server {self.server_name}: List tools error: {resp['error']}")
@@ -259,10 +279,9 @@ class MCPClient:
             async def wait_for_response():
                 while rid not in self.responses:
                     await asyncio.sleep(0.01)
-                resp = self.responses[rid]
-                del self.responses[rid]
+                resp, _ = self.responses.pop(rid)  # 一拿到就删除
                 return resp
-            timeout = os.getenv("MCP_TIMEOUT", 8)  #工具的最大超时时间
+            timeout = os.getenv("MCP_TIMEOUT", 12)  #工具的最大超时时间
             timeout = int(timeout)  #工具的最大超时时间
             start_time = asyncio.get_event_loop().time()
             response = await asyncio.wait_for(wait_for_response(), timeout=timeout)
@@ -276,11 +295,13 @@ class MCPClient:
                 return response["result"]
 
         except asyncio.TimeoutError:
+            # 超时也清理掉这条 id
+            self.responses.pop(rid, None)
             logger.error(f"错误: Server {self.server_name}: Tool {tool_name} timed out after {timeout}s")
-            return {"error": f"Timeout waiting for tool result after {timeout}s"}
+            return {"error": f"由于获取数据量太大，超过了最大查询时间 {timeout}s，请缩小查询范围"}
         except Exception as e:
             logger.error(f"错误: Server {self.server_name}: An unexpected error occurred: {e}")
-            return {"error": f"An unexpected error occurred: {e}"}
+            return {"error": f"发生了1个未知错误，请联系管理员解决: {e}"}
 
     async def _send_message(self, message: dict):
         if not self.process or self._shutdown:
@@ -638,7 +659,7 @@ async def run_interaction(
         return error_msg
 
     conversation = []
-
+    logger.info(f"all_functions: {all_functions}")
     # 4) Build conversation
     # Get system message - either from systemMessageFile, systemMessage, or default
     system_msg = "You are a helpful assistant."
@@ -677,8 +698,39 @@ async def run_interaction(
                     generator = await generate_text(conversation, chosen_model, all_functions, stream=True)
                     accumulated_text = ""
                     tool_calls_processed = False
-                    
-                    async for chunk in await generator:
+                    while True:
+                        try:
+                            anext_task = asyncio.create_task(generator.__anext__())
+                        except StopAsyncIteration:
+                            break  # 生成器结束
+
+                        chunk = None
+                        while True:
+                            timer_task = asyncio.create_task(asyncio.sleep(2))  # 设置超时时间2秒
+                            done, pending = await asyncio.wait(
+                                [anext_task, timer_task],
+                                return_when=asyncio.FIRST_COMPLETED
+                            )
+
+                            if anext_task in done:
+                                timer_task.cancel()
+                                try:
+                                    chunk = await anext_task
+                                except StopAsyncIteration:
+                                    break
+                                except Exception as e:
+                                    raise e
+                                break  # 成功获取到chunk，处理它
+                            else:
+                                # 发送thinking提示
+                                yield {
+                                    "assistant_text": " ",
+                                    "tool_calls": [],
+                                    "is_chunk": True,
+                                    "token": True
+                                }
+                        if not chunk:
+                            break  # 生成器已结束
                         if chunk.get("is_chunk", False):
                             # Immediately yield each token without accumulation
                             if chunk.get("token", False):
@@ -691,7 +743,7 @@ async def run_interaction(
                                 remaining = chunk["assistant_text"][len(accumulated_text):]
                                 if remaining:
                                     yield remaining
-                            
+
                             # Process any tool calls from the final chunk
                             tool_calls = chunk.get("tool_calls", [])
                             if tool_calls:
@@ -705,11 +757,24 @@ async def run_interaction(
                                     "tool_calls": tool_calls
                                 }
                                 conversation.append(assistant_message)
-                                
+
                                 # Process each tool call
                                 for tc in tool_calls:
                                     if tc.get("function", {}).get("name"):
-                                        result = await process_tool_call(tc, servers, quiet_mode)
+                                        task = asyncio.create_task(process_tool_call(tc, servers, quiet_mode))
+
+                                        # 每1秒 yield 一次"running"直到 task 完成
+                                        while not task.done():
+                                            await asyncio.sleep(1)
+                                            yield {
+                                                "assistant_text": ".",
+                                                "tool_calls": [],
+                                                "is_chunk": True,
+                                                "token": True
+                                            }
+
+                                        # 一旦任务完成
+                                        result = await task
                                         if result:
                                             conversation.append(result)
                                             tool_calls_processed = True
