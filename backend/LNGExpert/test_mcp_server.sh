@@ -3,7 +3,7 @@
 # 定义配置项
 declare -A scripts=(
   ["SimulateLNG"]="mcpserver/Simulate_LNG_Price.py"
-  ["SimulateProfit"]="mcpserver/Simulate_Factory_Profit.py.py"
+  ["SimulateProfit"]="mcpserver/Simulate_Factory_Profit.py"
 )
 
 # 循环执行所有脚本
