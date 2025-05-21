@@ -241,6 +241,7 @@ python main.py --port 10006
 ## 🤝 社区与支持
 - **[GitHub Issues](https://github.com/johnson7788/A2AServer/issues)**：报告错误或请求功能。
 - **[GitHub Discussions](https://github.com/johnson7788/A2AServer/discussions)**：提问和分享想法。
+- **[知乎](https://zhuanlan.zhihu.com/p/1904921460507645693)**: 知乎讲解（微信）
 
 ## 📄 许可证
 本项目采用MIT许可证 -  Free for all.
