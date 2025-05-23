@@ -318,7 +318,6 @@ class BasicAgent:
                     stream=True,
                 )
                 # Iterate through the chunks yielded by the response_generator
-                chunks = []
                 async for chunk in response_generator:
                     # Yield each chunk as it arrives.
                     yield {
