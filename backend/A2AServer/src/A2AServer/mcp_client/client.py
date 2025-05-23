@@ -85,25 +85,25 @@ class SSEMCPClient:
                 # 将 pydantic 模型转换为字典格式
                 return response.model_dump() if hasattr(response, 'model_dump') else response
             except ClosedResourceError as e:
-                logging.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
+                logger.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
                 await self.cleanup()
                 status = await self.start()  # 重新建立 session
                 if status:
-                    logging.info("Session restarted successfully.")
+                    logger.info("Session restarted successfully.")
                 else:
-                    logging.error("Failed to restart session.")
+                    logger.error("Failed to restart session.")
                 attempt += 1
                 await asyncio.sleep(delay)
             except Exception as e:
                 attempt += 1
-                logging.warning(
+                logger.warning(
                     f"Error executing tool: {e.__repr__()}. Attempt {attempt} of {retries}."
                 )
                 if attempt < retries:
-                    logging.info(f"Retrying in {delay} seconds...")
+                    logger.info(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
-                    logging.error("Max retries reached. Failing.")
+                    logger.error("Max retries reached. Failing.")
                     raise
     async def cleanup(self):
         if self.session:
@@ -153,7 +153,7 @@ class MCPClient:
             self.session = session
             return True
         except Exception as e:
-            logging.error(f"Error initializing server {self.name}: {e}")
+            logger.error(f"Error initializing server {self.name}: {e}")
             await self.cleanup()
             return False
 
@@ -210,29 +210,29 @@ class MCPClient:
         attempt = 0
         while attempt < retries:
             try:
-                logging.info(f"Executing {tool_name}...")
+                logger.info(f"Executing {tool_name}...")
                 response = await self.session.call_tool(tool_name, arguments)
                 return response.model_dump() if hasattr(response, 'model_dump') else response
             except ClosedResourceError as e:
-                logging.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
+                logger.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
                 await self.cleanup()
                 status = await self.start()  # 重新建立 session
                 if status:
-                    logging.info("Session restarted successfully.")
+                    logger.info("Session restarted successfully.")
                 else:
-                    logging.error("Failed to restart session.")
+                    logger.error("Failed to restart session.")
                 attempt += 1
                 await asyncio.sleep(delay)
             except Exception as e:
                 attempt += 1
-                logging.warning(
+                logger.warning(
                     f"Error executing tool: {e}. Attempt {attempt} of {retries}."
                 )
                 if attempt < retries:
-                    logging.info(f"Retrying in {delay} seconds...")
+                    logger.info(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
-                    logging.error("Max retries reached. Failing.")
+                    logger.error("Max retries reached. Failing.")
                     raise
 
     async def cleanup(self) -> None:
@@ -243,7 +243,7 @@ class MCPClient:
                 self.session = None
                 self.stdio_context = None
             except Exception as e:
-                logging.error(f"Error during cleanup of server {self.name}: {e}")
+                logger.error(f"Error during cleanup of server {self.name}: {e}")
 
 
 class Tool:
