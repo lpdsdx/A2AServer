@@ -43,7 +43,7 @@ class SSEMCPClient:
 
     async def start(self):
         try:
-            self._streams_context = sse_client(url=self.url)
+            self._streams_context = sse_client(url=self.url, sse_read_timeout=None)
             streams = await self._streams_context.__aenter__()
 
             self._session_context = ClientSession(*streams)
