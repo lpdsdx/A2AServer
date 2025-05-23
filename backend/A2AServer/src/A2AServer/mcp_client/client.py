@@ -106,10 +106,13 @@ class SSEMCPClient:
                     logger.error("Max retries reached. Failing.")
                     raise
     async def cleanup(self):
-        if self.session:
-            await self._session_context.__aexit__(None, None, None)
-        if self._streams_context:
-            await self._streams_context.__aexit__(None, None, None)
+        try:
+            if self.session:
+                await self._session_context.__aexit__(None, None, None)
+            if self._streams_context:
+                await self._streams_context.__aexit__(None, None, None)
+        except Exception as e:
+            logger.warning(f"Error cleaning up SSE client: {e.__repr__()}")
 
 
 class MCPClient:
