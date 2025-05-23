@@ -80,7 +80,7 @@ class SSEMCPClient:
             return response.model_dump() if hasattr(response, 'model_dump') else response
         except Exception as e:
             logger.error(f"call_tool: Server {self.server_name}: Tool call error: {str(e)}")
-            return {"error": e.__repr__()}
+            return {"error": f"Tool call error:{e.__repr__()}"}
 
     async def stop(self):
         if self.session:
@@ -188,8 +188,8 @@ class MCPClient:
         while attempt < retries:
             try:
                 logging.info(f"Executing {tool_name}...")
-                result = await self.session.call_tool(tool_name, arguments)
-                return result
+                response = await self.session.call_tool(tool_name, arguments)
+                return response.model_dump() if hasattr(response, 'model_dump') else response
             except ClosedResourceError as e:
                 logging.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
                 await self.cleanup()
@@ -434,7 +434,7 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
     if "error" in result:
         result_content = result["error"]
     else:
-        result_content = "\n".join(content.text for content in result.content)
+        result_content = "\n".join(content["text"] for content in result["content"])
 
     return {
         "role": "tool",
