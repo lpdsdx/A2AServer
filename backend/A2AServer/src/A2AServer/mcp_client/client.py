@@ -9,7 +9,10 @@ import json
 import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union, AsyncGenerator
-
+import shutil
+from contextlib import AsyncExitStack
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
 from mcp import ClientSession
 
@@ -92,288 +95,168 @@ class SSEMCPClient:
 
 
 class MCPClient:
-    """Implementation for a single MCP server."""
-    def __init__(self, server_name, command, args=None, env=None):
-        self.server_name = server_name
-        self.command = command
-        self.args = args or []
-        self.env = env
-        self.process = None
+    """Manages MCP server connections and tool execution."""
+
+    def __init__(self, server_name: str, command, args=None, env=None) -> None:
+        self.name: str = server_name
+        self.config: dict[str, Any] = {"command": command, "args": args, "env": env}
+        self.stdio_context: Any | None = None
+        self.session: ClientSession | None = None
+        self._cleanup_lock: asyncio.Lock = asyncio.Lock()
+        self.exit_stack: AsyncExitStack = AsyncExitStack()
         self.tools = []
-        self.request_id = 0
-        self.protocol_version = "2024-11-05"
-        self.receive_task = None
-        self.responses = {}
-        self.server_capabilities = {}
-        self._shutdown = False
-        self._cleanup_lock = asyncio.Lock()
-        self._cleanup_task = None
-        self._response_ttl = 60  # 响应保留 60s
 
-    async def _receive_loop(self):
-        if not self.process or self.process.stdout.at_eof():
-            return
+    async def start(self) -> bool:
+        """Initialize the server connection."""
+        command = (
+            shutil.which("npx")
+            if self.config["command"] == "npx"
+            else self.config["command"]
+        )
+        if command is None:
+            raise ValueError("The command must be a valid string and cannot be None.")
+
+        server_params = StdioServerParameters(
+            command=command,
+            args=self.config["args"],
+            env={**os.environ, **self.config["env"]}
+            if self.config.get("env")
+            else None,
+        )
         try:
-            while not self.process.stdout.at_eof():
-                line = await self.process.stdout.readline()
-                if not line:
-                    break
-                try:
-                    message = json.loads(line.decode().strip())
-                    self._process_message(message)
-                except json.JSONDecodeError:
-                    pass
-        except Exception:
-            pass
-
-    def _process_message(self, message: dict):
-        if "jsonrpc" in message and "id" in message:
-            if "result" in message or "error" in message:
-                if "result" in message or "error" in message:
-                    self.responses[message["id"]] = (message, time.time())
-            else:
-                # request from server, not implemented
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": message["id"],
-                    "error": {
-                        "code": -32601,
-                        "message": f"Method {message.get('method')} not implemented in client"
-                    }
-                }
-                asyncio.create_task(self._send_message(resp))
-        elif "jsonrpc" in message and "method" in message and "id" not in message:
-            # notification from server
-            pass
-
-    async def start(self):
-        expanded_args = []
-        for a in self.args:
-            if isinstance(a, str) and "~" in a:
-                expanded_args.append(os.path.expanduser(a))
-            else:
-                expanded_args.append(a)
-
-        env_vars = os.environ.copy()
-        if self.env:
-            env_vars.update(self.env)
-
-        try:
-            self.process = await asyncio.create_subprocess_exec(
-                self.command,
-                *expanded_args,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env_vars
+            stdio_transport = await self.exit_stack.enter_async_context(
+                stdio_client(server_params)
             )
-            self.receive_task = asyncio.create_task(self._receive_loop())
-            ok = await self._perform_initialize()
-            # 启动定期清理任务
-            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-            return ok
-        except Exception:
-            return False
-
-    async def _cleanup_loop(self):
-        """定期清理过期响应"""
-        try:
-            while not self._shutdown:
-                now = time.time()
-                # 列出所有超时 id
-                stale = [rid for rid, (_, ts) in self.responses.items()
-                         if now - ts > self._response_ttl]
-                for rid in stale:
-                    self.responses.pop(rid, None)
-                await asyncio.sleep(30)
-        except asyncio.CancelledError:
-            pass
-    async def _perform_initialize(self):
-        self.request_id += 1
-        req_id = self.request_id
-        req = {
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": self.protocol_version,
-                "capabilities": {"sampling": {}},
-                "clientInfo": {
-                    "name": "MCPClient",
-                    "version": "1.0.0"
-                }
-            }
-        }
-        await self._send_message(req)
-
-        start = asyncio.get_event_loop().time()
-        timeout = 10  # Increased timeout to 10 seconds
-        while asyncio.get_event_loop().time() - start < timeout:
-            if req_id in self.responses:
-                resp, _ = self.responses[req_id]
-                del self.responses[req_id]
-                if "error" in resp:
-                    logger.error(f"Server {self.server_name}: Initialize error: {resp['error']}")
-                    return False
-                if "result" in resp:
-                    elapsed = asyncio.get_event_loop().time() - start
-                    logger.info(f"Server {self.server_name}: Initialized in {elapsed:.2f}s")
-                    note = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-                    await self._send_message(note)
-                    init_result = resp["result"]
-                    self.server_capabilities = init_result.get("capabilities", {})
-                    return True
-            await asyncio.sleep(0.05)
-        logger.error(f"Server {self.server_name}: Initialize timed out after {timeout}s")
-        return False
-
-    async def list_tools(self):
-        if not self.process:
-            return []
-        self.request_id += 1
-        rid = self.request_id
-        req = {
-            "jsonrpc": "2.0",
-            "id": rid,
-            "method": "tools/list",
-            "params": {}
-        }
-        await self._send_message(req)
-
-        start = asyncio.get_event_loop().time()
-        timeout = 10  # Increased timeout to 10 seconds
-        while asyncio.get_event_loop().time() - start < timeout:
-            if rid in self.responses:
-                resp, _ = self.responses[rid]  #响应和时间戳
-                del self.responses[rid]
-                if "error" in resp:
-                    logger.error(f"Server {self.server_name}: List tools error: {resp['error']}")
-                    return []
-                if "result" in resp and "tools" in resp["result"]:
-                    elapsed = asyncio.get_event_loop().time() - start
-                    logger.info(f"Server {self.server_name}: Listed {len(resp['result']['tools'])} tools in {elapsed:.2f}s")
-                    self.tools = resp["result"]["tools"]
-                    return self.tools
-            await asyncio.sleep(0.05)
-        logger.error(f"Server {self.server_name}: List tools timed out after {timeout}s")
-        return []
-
-    async def call_tool(self, tool_name: str, arguments: dict):
-        if not self.process:
-            return {"error": "Not started"}
-        self.request_id += 1
-        rid = self.request_id
-        req = {
-            "jsonrpc": "2.0",
-            "id": rid,
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments
-            }
-        }
-        await self._send_message(req)
-
-        logger.debug(f"开始发送Sent request with id {rid} for tool {tool_name}")
-        try:
-            async def wait_for_response():
-                while rid not in self.responses:
-                    await asyncio.sleep(0.01)
-                resp, _ = self.responses.pop(rid)  # 一拿到就删除
-                return resp
-            timeout = os.getenv("MCP_TIMEOUT", 12)  #工具的最大超时时间
-            timeout = int(timeout)  #工具的最大超时时间
-            start_time = asyncio.get_event_loop().time()
-            response = await asyncio.wait_for(wait_for_response(), timeout=timeout)
-            elapsed = asyncio.get_event_loop().time() - start_time
-
-            if "error" in response:
-                logger.error(f"错误：Server {self.server_name}: Tool {tool_name} error: {response['error']}")
-                return {"error": response["error"]}
-            if "result" in response:
-                logger.debug(f"Server {self.server_name}: Tool {tool_name} completed in {elapsed:.2f}s")
-                return response["result"]
-
-        except asyncio.TimeoutError:
-            # 超时也清理掉这条 id
-            self.responses.pop(rid, None)
-            logger.error(f"错误: Server {self.server_name}: Tool {tool_name} timed out after {timeout}s")
-            return {"error": f"由于获取数据量太大，超过了最大查询时间 {timeout}s，请缩小查询范围"}
-        except Exception as e:
-            logger.error(f"错误: Server {self.server_name}: An unexpected error occurred: {e}")
-            return {"error": f"发生了1个未知错误，请联系管理员解决: {e}"}
-
-    async def _send_message(self, message: dict):
-        if not self.process or self._shutdown:
-            logger.error(f"Server {self.server_name}: Cannot send message - process not running or shutting down")
-            return False
-        try:
-            data = json.dumps(message) + "\n"
-            self.process.stdin.write(data.encode())
-            await self.process.stdin.drain()
+            read, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            await session.initialize()
+            self.session = session
             return True
         except Exception as e:
-            logger.error(f"Server {self.server_name}: Error sending message: {str(e)}")
+            logging.error(f"Error initializing server {self.name}: {e}")
+            await self.cleanup()
             return False
 
-    async def stop(self):
+    async def list_tools(self) -> list[Any]:
+        """List available tools from the server.
+
+        Returns:
+            A list of available tools.
+
+        Raises:
+            RuntimeError: If the server is not initialized.
+        """
+        if not self.session:
+            raise RuntimeError(f"Server {self.name} not initialized")
+
+        tools_response = await self.session.list_tools()
+        tools = []
+
+        for item in tools_response:
+            if isinstance(item, tuple) and item[0] == "tools":
+                tools.extend(
+                    Tool(tool.name, tool.description, tool.inputSchema)
+                    for tool in item[1]
+                )
+        # 工具名称
+        self.tools = tools
+        return tools
+
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        retries: int = 2,
+        delay: float = 1.0,
+    ) -> Any:
+        """Execute a tool with retry mechanism.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            arguments: Tool arguments.
+            retries: Number of retry attempts.
+            delay: Delay between retries in seconds.
+
+        Returns:
+            Tool execution result.
+
+        Raises:
+            RuntimeError: If server is not initialized.
+            Exception: If tool execution fails after all retries.
+        """
+        if not self.session:
+            raise RuntimeError(f"Server {self.name} not initialized")
+
+        attempt = 0
+        while attempt < retries:
+            try:
+                logging.info(f"Executing {tool_name}...")
+                result = await self.session.call_tool(tool_name, arguments)
+
+                return result
+
+            except Exception as e:
+                attempt += 1
+                logging.warning(
+                    f"Error executing tool: {e}. Attempt {attempt} of {retries}."
+                )
+                if attempt < retries:
+                    logging.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    logging.error("Max retries reached. Failing.")
+                    raise
+
+    async def cleanup(self) -> None:
+        """Clean up server resources."""
         async with self._cleanup_lock:
-            if self._shutdown:
-                return
-            self._shutdown = True
+            try:
+                await self.exit_stack.aclose()
+                self.session = None
+                self.stdio_context = None
+            except Exception as e:
+                logging.error(f"Error during cleanup of server {self.name}: {e}")
 
-            if self.receive_task and not self.receive_task.done():
-                self.receive_task.cancel()
-                try:
-                    await self.receive_task
-                except asyncio.CancelledError:
-                    pass
+    # async def stop(self):
+    #     await self.cleanup()
+    # async def close(self):
+    #     await self.cleanup()
 
-            if self.process:
-                try:
-                    # Try to send a shutdown notification first
-                    try:
-                        note = {"jsonrpc": "2.0", "method": "shutdown"}
-                        await self._send_message(note)
-                        # Give a small window for the process to react
-                        await asyncio.sleep(0.5)
-                    except:
-                        pass
+class Tool:
+    """Represents a tool with its properties and formatting."""
 
-                    # Close stdin before terminating to prevent pipe errors
-                    if self.process.stdin:
-                        self.process.stdin.close()
+    def __init__(
+        self, name: str, description: str, input_schema: dict[str, Any]
+    ) -> None:
+        self.name: str = name
+        self.description: str = description
+        self.input_schema: dict[str, Any] = input_schema
 
-                    # Try graceful shutdown first
-                    self.process.terminate()
-                    try:
-                        # Use a shorter timeout to make cleanup faster
-                        await asyncio.wait_for(self.process.wait(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        # Force kill if graceful shutdown fails
-                        logger.warning(f"Server {self.server_name}: Force killing process after timeout")
-                        self.process.kill()
-                        try:
-                            await asyncio.wait_for(self.process.wait(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            logger.error(f"Server {self.server_name}: Process did not respond to SIGKILL")
-                except Exception as e:
-                    logger.error(f"Server {self.server_name}: Error during process cleanup: {str(e)}")
-                finally:
-                    # Make sure we clear the reference
-                    self.process = None
+    def format_for_llm(self) -> str:
+        """Format tool information for LLM.
 
-    # Alias close to stop for backward compatibility
-    async def close(self):
-        await self.stop()
+        Returns:
+            A formatted string describing the tool.
+        """
+        args_desc = []
+        if "properties" in self.input_schema:
+            for param_name, param_info in self.input_schema["properties"].items():
+                arg_desc = (
+                    f"- {param_name}: {param_info.get('description', 'No description')}"
+                )
+                if param_name in self.input_schema.get("required", []):
+                    arg_desc += " (required)"
+                args_desc.append(arg_desc)
 
-    # Add async context manager support
-    async def __aenter__(self):
-        await self.start()
-        return self
+        return f"""
+Tool: {self.name}
+Description: {self.description}
+Arguments:
+{chr(10).join(args_desc)}
+"""
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.stop()
 
 async def generate_text(conversation: List[Dict], model_cfg: Dict,
                        all_functions: List[Dict], stream: bool = False) -> Union[Dict, AsyncGenerator]:
@@ -527,8 +410,8 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
     # Get the tool's schema
     tool_schema = None
     for tool in servers[srv_name].tools:
-        if tool["name"] == tool_name:
-            tool_schema = tool.get("inputSchema", {})
+        if tool.name == tool_name:
+            tool_schema = tool.input_schema
             break
 
     if tool_schema:
@@ -545,13 +428,13 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
     print(f"开始调用call_tool")
     result = await servers[srv_name].call_tool(tool_name, func_args)
     print(f"工具{tool_name}运行结果:")
-    print(json.dumps(result, indent=2, ensure_ascii=False))
+    result_content = "\n".join(content.text for content in result.content)
 
     return {
         "role": "tool",
         "tool_call_id": tc["id"],
         "name": func_name,
-        "content": json.dumps(result)
+        "content": {"text": result_content}
     }
 
 async def run_interaction(

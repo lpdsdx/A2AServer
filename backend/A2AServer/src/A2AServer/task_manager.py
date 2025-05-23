@@ -47,30 +47,9 @@ def decode_tool_calls_to_string(raw_str: str) -> str:
 
 
 def decode_tool_call_result_to_string(raw_str: str) -> str:
-    load_json = json.loads(raw_str)
     # tool执行的结果
-    content = load_json.get("content", "")
-    if content:
-        content_data = json.loads(content)
-        logger.info(f"decode_tool_call_result_to_string: content_data: {content_data}")
-        if "error" in content_data:
-            logger.warning("Tool call error: %s", content_data["error"])
-        else:
-            nest_contents = content_data["content"]
-            for content_item in nest_contents:
-                if "text" in content_item:
-                    content_json_text = content_item["text"]
-                    try:
-                        # 函数的返回的结果有可能是数组或者字符串，如果是数组，那么尝试加载它
-                        content_text = json.loads(content_json_text)
-                    except Exception as e:
-                        # 说明工具运行的结果不是数组，不需要处理了，直接使用
-                        content_text = content_json_text
-                    content_data["content"] = content_text
-    load_json["content"] = content_data
-    # 变成中文的返回
-    json_data = json.dumps(load_json, ensure_ascii=False, indent=2)
-    return json_data
+    print("decode_tool_call_result_to_string:", raw_str)
+    return raw_str
 
 
 class AgentTaskManager(InMemoryTaskManager):
