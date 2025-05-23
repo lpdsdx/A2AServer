@@ -35,7 +35,7 @@ async def generate_with_deepseek_stream(client: AsyncOpenAI, model_name: str, co
         current_content = ""
 
         async for chunk in response:
-            logger.debug(f"Deepseek chunk: {chunk}")
+            logger.debug(f"Deepseek Output chunk: {chunk}")
             delta = chunk.choices[0].delta
             if delta.model_extra:
                 if "reasoning_content" in delta.model_extra:

@@ -4,9 +4,12 @@ bytedance provider implementation. 字节跳动，豆包，tiktok
 
 import os
 import json
+import logging
 from typing import Dict, List, Any, AsyncGenerator, Optional, Union
 
 from openai import AsyncOpenAI, APIError, RateLimitError
+
+logger = logging.getLogger(__name__)
 
 async def generate_with_bytedance_stream(client: AsyncOpenAI, model_name: str, conversation: List[Dict],
                                     formatted_functions: List[Dict], temperature: Optional[float] = None,
@@ -28,6 +31,8 @@ async def generate_with_bytedance_stream(client: AsyncOpenAI, model_name: str, c
         current_content = ""
 
         async for chunk in response:
+            logger.debug(f"bytedance Output chunk: {chunk}")
+
             delta = chunk.choices[0].delta
             if delta.model_extra:
                 if "reasoning_content" in delta.model_extra:
