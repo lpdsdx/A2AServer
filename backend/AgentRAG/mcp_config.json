@@ -2,7 +2,14 @@
   "mcpServers": {
     "RAGTool": {
       "command": "uv",
-      "url": "http://127.0.0.1:7002/sse"
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "mcpserver/rag_tool.py"
+      ]
     }
   }
 }
