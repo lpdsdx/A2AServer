@@ -105,8 +105,7 @@ class SSEMCPClient:
                 else:
                     logging.error("Max retries reached. Failing.")
                     raise
-
-    async def stop(self):
+    async def cleanup(self):
         if self.session:
             await self._session_context.__aexit__(None, None, None)
         if self._streams_context:
@@ -246,10 +245,6 @@ class MCPClient:
             except Exception as e:
                 logging.error(f"Error during cleanup of server {self.name}: {e}")
 
-    # async def stop(self):
-    #     await self.cleanup()
-    # async def close(self):
-    #     await self.cleanup()
 
 class Tool:
     """Represents a tool with its properties and formatting."""
