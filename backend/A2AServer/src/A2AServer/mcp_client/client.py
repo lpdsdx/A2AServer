@@ -63,13 +63,7 @@ class SSEMCPClient:
             response = await self.session.list_tools()
             # 将 pydantic 模型转换为字典格式
             self.tools = [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    # "inputSchema": tool.inputSchema.model_dump() if tool.inputSchema else None
-                    "inputSchema": tool.inputSchema
-                }
-                for tool in response.tools
+                Tool(tool.name, tool.description, tool.inputSchema) for tool in response.tools
             ]
             return self.tools
         except Exception as e:
@@ -86,7 +80,7 @@ class SSEMCPClient:
             return response.model_dump() if hasattr(response, 'model_dump') else response
         except Exception as e:
             logger.error(f"call_tool: Server {self.server_name}: Tool call error: {str(e)}")
-            return {"error": str(e)}
+            return {"error": e.__repr__()}
 
     async def stop(self):
         if self.session:
@@ -437,7 +431,10 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
     print(f"开始调用call_tool")
     result = await servers[srv_name].call_tool(tool_name, func_args)
     print(f"工具{tool_name}运行结果:")
-    result_content = "\n".join(content.text for content in result.content)
+    if "error" in result:
+        result_content = result["error"]
+    else:
+        result_content = "\n".join(content.text for content in result.content)
 
     return {
         "role": "tool",
