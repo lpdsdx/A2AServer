@@ -15,7 +15,7 @@ for handler in logging.root.handlers[:]:
 
 # 强制配置 root logger
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     stream=sys.stdout,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
