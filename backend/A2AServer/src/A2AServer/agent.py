@@ -109,10 +109,10 @@ class BasicAgent:
                     try:
                          tools = await client.list_tools() # <-- AWAIT is valid here
                          for t in tools:
-                             input_schema = t.get("inputSchema") or {"type": "object", "properties": {}}
+                             input_schema = t.input_schema or {"type": "object", "properties": {}}
                              fn_def = {
-                                 "name": f"{server_name}_{t['name']}",
-                                 "description": t.get("description", ""),
+                                 "name": f"{server_name}_{t.name}",
+                                 "description": t.description,
                                  "parameters": input_schema
                              }
                              all_functions.append(fn_def)
