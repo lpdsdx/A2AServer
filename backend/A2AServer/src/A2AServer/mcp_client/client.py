@@ -70,17 +70,41 @@ class SSEMCPClient:
             logger.error(f"Server {self.server_name}: List tools error: {str(e)}")
             return []
 
-    async def call_tool(self, tool_name: str, arguments: dict):
+    async def call_tool(self, tool_name: str, arguments: dict, retries: int = 2, delay: float = 1.0,):
         if not self.session:
-            return {"error": "MCP Not connected"}
-        try:
-            logger.info(f"开始使用MCP协议调用工具，tool_name: {tool_name}, arguments: {arguments}")
-            response = await self.session.call_tool(tool_name, arguments)
-            # 将 pydantic 模型转换为字典格式
-            return response.model_dump() if hasattr(response, 'model_dump') else response
-        except Exception as e:
-            logger.error(f"call_tool: Server {self.server_name}: Tool call error: {str(e)}")
-            return {"error": f"Tool call error:{e.__repr__()}"}
+            return {"error": "MCP SSE Not connected"}
+
+        if not self.session:
+            raise RuntimeError(f"Server {self.name} not initialized")
+
+        attempt = 0
+        while attempt < retries:
+            try:
+                logger.info(f"开始使用SSE MCP协议调用工具，tool_name: {tool_name}, arguments: {arguments}")
+                response = await self.session.call_tool(tool_name, arguments)
+                # 将 pydantic 模型转换为字典格式
+                return response.model_dump() if hasattr(response, 'model_dump') else response
+            except ClosedResourceError as e:
+                logging.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
+                await self.cleanup()
+                status = await self.start()  # 重新建立 session
+                if status:
+                    logging.info("Session restarted successfully.")
+                else:
+                    logging.error("Failed to restart session.")
+                attempt += 1
+                await asyncio.sleep(delay)
+            except Exception as e:
+                attempt += 1
+                logging.warning(
+                    f"Error executing tool: {e.__repr__()}. Attempt {attempt} of {retries}."
+                )
+                if attempt < retries:
+                    logging.info(f"Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    logging.error("Max retries reached. Failing.")
+                    raise
 
     async def stop(self):
         if self.session:
