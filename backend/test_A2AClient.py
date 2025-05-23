@@ -54,17 +54,6 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
         except Exception as e:
             self.fail(f"测试设置失败: 无法初始化客户端。错误信息: {e}")
 
-        self.test_data = {
-            "knowledge_base_id": [193],
-            "file_id": ['326', '325'],
-            "business_source": "知识库管理",
-            "qa_type": "公域和私域结合",
-            "history": [],
-            "is_extend_questions": False,
-            "is_source_documents": True,
-            "is_deepseek": False
-        }
-
     async def asyncTearDown(self):
         """
         清理测试环境，例如停止 push notification listener。
