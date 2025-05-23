@@ -197,7 +197,7 @@ class MCPClient:
                 result = await self.session.call_tool(tool_name, arguments)
                 return result
             except ClosedResourceError as e:
-                logging.warning(f"Session closed: {e}, attempting to restart session.")
+                logging.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
                 await self.cleanup()
                 status = await self.start()  # 重新建立 session
                 if status:
