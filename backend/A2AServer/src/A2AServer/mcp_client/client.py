@@ -15,6 +15,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
 from mcp import ClientSession
+from anyio import ClosedResourceError
 
 from .utils import load_mcp_config_from_file
 from .providers.openai import generate_with_openai
@@ -194,9 +195,17 @@ class MCPClient:
             try:
                 logging.info(f"Executing {tool_name}...")
                 result = await self.session.call_tool(tool_name, arguments)
-
                 return result
-
+            except ClosedResourceError as e:
+                logging.warning(f"Session closed: {e}, attempting to restart session.")
+                await self.cleanup()
+                status = await self.start()  # 重新建立 session
+                if status:
+                    logging.info("Session restarted successfully.")
+                else:
+                    logging.error("Failed to restart session.")
+                attempt += 1
+                await asyncio.sleep(delay)
             except Exception as e:
                 attempt += 1
                 logging.warning(
@@ -436,269 +445,3 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
         "name": func_name,
         "content": result_content
     }
-
-async def run_interaction(
-    user_query: str,
-    model_name: Optional[str] = None,
-    config: Optional[dict] = None,
-    config_path: str = "mcp_config.json",
-    quiet_mode: bool = False,
-    log_messages_path: Optional[str] = None,
-    stream: bool = False
-) -> Union[str, AsyncGenerator[str, None]]:
-    """
-    Run an interaction with the MCP servers.
-
-    Args:
-        user_query: The user's query
-        model_name: Name of the model to use (optional)
-        config: Configuration dict (optional, if not provided will load from config_path)
-        config_path: Path to the configuration file (default: mcp_config.json)
-        quiet_mode: Whether to suppress intermediate output (default: False)
-        log_messages_path: Path to log messages in JSONL format (optional)
-        stream: Whether to stream the response (default: False)
-
-    Returns:
-        If stream=False: The final text response
-        If stream=True: AsyncGenerator yielding chunks of the response
-    """
-    # 1) If config is not provided, load from file:
-    if config is None:
-        config = await load_mcp_config_from_file(config_path)
-
-    servers_cfg = config.get("mcpServers", {})
-    models_cfg = config.get("models", [])
-
-    # 2) Choose a model
-    chosen_model = None
-    if model_name:
-        for m in models_cfg:
-            if m.get("model") == model_name or m.get("title") == model_name:
-                chosen_model = m
-                break
-        if not chosen_model:
-            # fallback to default or fail
-            for m in models_cfg:
-                if m.get("default"):
-                    chosen_model = m
-                    break
-    else:
-        # if model_name not specified, pick default
-        for m in models_cfg:
-            if m.get("default"):
-                chosen_model = m
-                break
-        if not chosen_model and models_cfg:
-            chosen_model = models_cfg[0]
-
-    if not chosen_model:
-        error_msg = "No suitable model found in config."
-        if stream:
-            async def error_gen():
-                yield error_msg
-            return error_gen()
-        return error_msg
-
-    # 3) Start servers
-    servers = {}
-    all_functions = []
-    for server_name, conf in servers_cfg.items():
-        if "url" in conf:  # SSE server
-            client = SSEMCPClient(server_name, conf["url"])
-        else:  # Local process-based server
-            client = MCPClient(
-                server_name=server_name,
-                command=conf.get("command"),
-                args=conf.get("args", []),
-                env=conf.get("env", {})
-            )
-        ok = await client.start()
-        if not ok:
-            if not quiet_mode:
-                print(f"[WARN] Could not start server {server_name}")
-            continue
-        else:
-            print(f"[OK] {server_name}")
-
-        # gather tools
-        tools = await client.list_tools()
-        for t in tools:
-            input_schema = t.get("inputSchema") or {"type": "object", "properties": {}}
-            fn_def = {
-                "name": f"{server_name}_{t['name']}",
-                "description": t.get("description", ""),
-                "parameters": input_schema
-            }
-            all_functions.append(fn_def)
-
-        servers[server_name] = client
-
-    if not servers:
-        error_msg = "No MCP servers could be started."
-        if stream:
-            async def error_gen():
-                yield error_msg
-            return error_gen()
-        return error_msg
-
-    conversation = []
-    logger.info(f"all_functions: {all_functions}")
-    # 4) Build conversation
-    # Get system message - either from systemMessageFile, systemMessage, or default
-    system_msg = "You are a helpful assistant."
-    if "systemMessageFile" in chosen_model:
-        try:
-            with open(chosen_model["systemMessageFile"], "r", encoding="utf-8") as f:
-                system_msg = f.read()
-        except Exception as e:
-            logger.warning(f"Failed to read system message file: {e}")
-            # Fall back to direct systemMessage if available
-            conversation.append({"role": "system", "content": chosen_model.get("systemMessage", system_msg)})
-    else:
-        conversation.append({"role": "system", "content": chosen_model.get("systemMessage", system_msg)})
-    if "systemMessageFiles" in chosen_model:
-        for file in chosen_model["systemMessageFiles"]:
-            try:
-                with open(file, "r", encoding="utf-8") as f:
-                    system_msg = f.read()
-                    conversation.append({"role": "system", "content": "File: " + file + "\n" + system_msg})
-            except Exception as e:
-                logger.warning(f"Failed to read system message file: {e}")
-
-    conversation.append({"role": "user", "content": user_query})
-
-    async def cleanup():
-        """Clean up servers and log messages"""
-        if log_messages_path:
-            await log_messages_to_file(conversation, all_functions, log_messages_path)
-        for cli in servers.values():
-            await cli.stop()
-
-    if stream:
-        async def stream_response():
-            try:
-                while True:  # Main conversation loop
-                    generator = await generate_text(conversation, chosen_model, all_functions, stream=True)
-                    accumulated_text = ""
-                    tool_calls_processed = False
-                    while True:
-                        try:
-                            anext_task = asyncio.create_task(generator.__anext__())
-                        except StopAsyncIteration:
-                            break  # 生成器结束
-
-                        chunk = None
-                        while True:
-                            timer_task = asyncio.create_task(asyncio.sleep(2))  # 设置超时时间2秒
-                            done, pending = await asyncio.wait(
-                                [anext_task, timer_task],
-                                return_when=asyncio.FIRST_COMPLETED
-                            )
-
-                            if anext_task in done:
-                                timer_task.cancel()
-                                try:
-                                    chunk = await anext_task
-                                except StopAsyncIteration:
-                                    break
-                                except Exception as e:
-                                    raise e
-                                break  # 成功获取到chunk，处理它
-                            else:
-                                # 发送thinking提示
-                                yield {
-                                    "assistant_text": " ",
-                                    "tool_calls": [],
-                                    "is_chunk": True,
-                                    "token": True
-                                }
-                        if not chunk:
-                            break  # 生成器已结束
-                        if chunk.get("is_chunk", False):
-                            # Immediately yield each token without accumulation
-                            if chunk.get("token", False):
-                                yield chunk["assistant_text"]
-                            accumulated_text += chunk["assistant_text"]
-                        else:
-                            # This is the final chunk with tool calls
-                            if accumulated_text != chunk["assistant_text"]:
-                                # If there's any remaining text, yield it
-                                remaining = chunk["assistant_text"][len(accumulated_text):]
-                                if remaining:
-                                    yield remaining
-
-                            # Process any tool calls from the final chunk
-                            tool_calls = chunk.get("tool_calls", [])
-                            if tool_calls:
-                                # Add type field to each tool call
-                                for tc in tool_calls:
-                                    tc["type"] = "function"
-                                # Add the assistant's message with tool calls
-                                assistant_message = {
-                                    "role": "assistant",
-                                    "content": chunk["assistant_text"],
-                                    "tool_calls": tool_calls
-                                }
-                                conversation.append(assistant_message)
-
-                                # Process each tool call
-                                for tc in tool_calls:
-                                    if tc.get("function", {}).get("name"):
-                                        task = asyncio.create_task(process_tool_call(tc, servers, quiet_mode))
-
-                                        # 每1秒 yield 一次"running"直到 task 完成
-                                        while not task.done():
-                                            await asyncio.sleep(1)
-                                            yield {
-                                                "assistant_text": ".",
-                                                "tool_calls": [],
-                                                "is_chunk": True,
-                                                "token": True
-                                            }
-
-                                        # 一旦任务完成
-                                        result = await task
-                                        if result:
-                                            conversation.append(result)
-                                            tool_calls_processed = True
-                    
-                    # Break the loop if no tool calls were processed
-                    if not tool_calls_processed:
-                        break
-                    
-            finally:
-                await cleanup()
-        
-        return stream_response()
-    else:
-        try:
-            final_text = ""
-            while True:
-                gen_result = await generate_text(conversation, chosen_model, all_functions, stream=False)
-                
-                assistant_text = gen_result["assistant_text"]
-                final_text = assistant_text
-                tool_calls = gen_result.get("tool_calls", [])
-
-                # Add the assistant's message
-                assistant_message = {"role": "assistant", "content": assistant_text}
-                if tool_calls:
-                    # Add type field to each tool call
-                    for tc in tool_calls:
-                        tc["type"] = "function"
-                    assistant_message["tool_calls"] = tool_calls
-                conversation.append(assistant_message)
-                logger.info(f"Added assistant message: {json.dumps(assistant_message, indent=2)}")
-
-                if not tool_calls:
-                    break
-
-                for tc in tool_calls:
-                    result = await process_tool_call(tc, servers, quiet_mode)
-                    if result:
-                        conversation.append(result)
-                        logger.info(f"Added tool result: {json.dumps(result, indent=2)}")
-
-            return final_text
-        finally:
-            await cleanup()
