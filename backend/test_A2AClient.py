@@ -155,7 +155,7 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.card, "Agent Card 未成功获取")
 
 
-        session_id = random.choice(string.ascii_letters + string.digits)
+        session_id = uuid4().hex
         test_scenarios = [
             {"prompt": "什么是LNG?", "session_id": session_id},
         ]
@@ -177,7 +177,11 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
                 notification_receiver_host=self.notification_receiver_host,
                 notification_receiver_port=self.notification_receiver_port,
             )
-            print(task_result)
+            artifacts = task_result.result.artifacts
+            for artifact in artifacts:
+                parts = artifact.parts
+                for part in parts:
+                    print(part.text, end="")
             self.assertIsNotNone(task_result, f"场景 {i+1} 未能获取任务结果")
             self.assertIsNotNone(task_result.result, f"场景 {i+1} 的任务结果为空")
             print(f"\n--- 场景 {i+1} 测试完成 ---")
@@ -190,7 +194,7 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
         """
         self.assertIsNotNone(self.client, "客户端未成功初始化")
         self.assertIsNotNone(self.card, "Agent Card 未成功获取")
-        session_id = random.choice(string.ascii_letters + string.digits)
+        session_id = uuid4().hex
         test_scenarios = [
             {"prompt": "5月19日内蒙古利润时多少？", "session_id": session_id},
         ]
@@ -212,7 +216,11 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
                 notification_receiver_host=self.notification_receiver_host,
                 notification_receiver_port=self.notification_receiver_port,
             )
-            print(task_result)
+            artifacts = task_result.result.artifacts
+            for artifact in artifacts:
+                parts = artifact.parts
+                for part in parts:
+                    print(part.text, end="")
             self.assertIsNotNone(task_result, f"场景 {i+1} 未能获取任务结果")
             self.assertIsNotNone(task_result.result, f"场景 {i+1} 的任务结果为空")
             print(f"\n--- 场景 {i+1} 测试完成 ---")
