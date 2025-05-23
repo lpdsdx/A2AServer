@@ -434,7 +434,7 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
         "role": "tool",
         "tool_call_id": tc["id"],
         "name": func_name,
-        "content": {"text": result_content}
+        "content": result_content
     }
 
 async def run_interaction(
