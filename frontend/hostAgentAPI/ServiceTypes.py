@@ -48,6 +48,14 @@ class GetEventRequest(JSONRPCRequest):
 class GetEventResponse(JSONRPCResponse):
   result: list[Event] | None = None
 
+# 查询事件的请求方法和返回值
+class QueryEventRequest(JSONRPCRequest):
+    method: Literal["events/query"] = "events/query"
+    params: str  # conversation_id
+
+class QueryEventResponse(JSONRPCResponse):
+    result: list[Event] | None = None
+
 class ListConversationRequest(JSONRPCRequest):
   method: Literal["conversation/list"] = "conversation/list"
 
