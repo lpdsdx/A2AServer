@@ -13,13 +13,17 @@ async def generate_with_openai_stream(client: AsyncOpenAI, model_name: str, conv
                                     top_p: Optional[float] = None, max_tokens: Optional[int] = None) -> AsyncGenerator:
     """Internal function for streaming generation"""
     try:
+        if formatted_functions:
+            tools = [{"type": "function", "function": f} for f in formatted_functions]
+        else:
+            tools = None
         response = await client.chat.completions.create(
             model=model_name,
             messages=conversation,
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
-            tools=[{"type": "function", "function": f} for f in formatted_functions],
+            tools=tools,
             tool_choice="auto",
             stream=True
         )
