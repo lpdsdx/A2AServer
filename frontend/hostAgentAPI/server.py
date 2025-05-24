@@ -22,7 +22,9 @@ from ServiceTypes import (
     ListTaskResponse,
     RegisterAgentResponse,
     ListAgentResponse,
-    GetEventResponse
+    GetEventResponse,
+    QueryEventResponse,
+    QueryEventRequest
 )
 
 class ConversationServer:
@@ -58,6 +60,10 @@ class ConversationServer:
     router.add_api_route(
         "/events/get",
         self._get_events,
+        methods=["POST"])
+    router.add_api_route(
+        "/events/query",
+        self._query_events,
         methods=["POST"])
     router.add_api_route(
         "/message/list",
@@ -157,6 +163,16 @@ class ConversationServer:
 
   def _get_events(self):
     return GetEventResponse(result=self.manager.events)
+
+  async def _query_events(self, request: Request):
+    data = await request.json()
+    conversation_id = data['params'].get("conversation_id")
+    # 过滤出属于该 conversation_id 的事件
+    events = [
+        event for event in self.manager.events
+        if getattr(event.content, "metadata", {}).get("conversation_id") == conversation_id
+    ]
+    return QueryEventResponse(result=events)
 
   def _list_tasks(self):
     return ListTaskResponse(result=self.manager.tasks)

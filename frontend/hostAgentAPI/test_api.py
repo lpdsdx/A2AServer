@@ -95,8 +95,7 @@ class ConversationServerTestCase(unittest.TestCase):
 
         url = f"{self.base_url}/message/send"
         headers = {'Content-Type': 'application/json'}
-        text = "国网大连的价格是多少？"
-        # text = "你好"
+        text = "你好"
         message_payload = {
             "params": {
                 "role": "user",
@@ -193,6 +192,28 @@ class ConversationServerTestCase(unittest.TestCase):
         self.assertIsInstance(res["result"], list, "/events/get 接口返回值 'result' 应为列表")
         print(f"/events/get 测试花费时间: {time.time() - start_time}秒")
 
+    def test_query_events(self):
+        """
+        测试查询事件的接口
+        """
+        # 可以先调用test_send_message创建1个conversation
+        conversation_id = "31429a79-b04f-4b62-96fc-bdbf12e76639"
+        url = f"{self.base_url}/events/query"
+        headers = {'Content-Type': 'application/json'}
+        message_payload = {
+            "params": {
+                "conversation_id": conversation_id,
+            }
+        }
+        start_time = time.time()
+        response = requests.post(url, headers=headers, json=message_payload)
+        self.assertEqual(response.status_code, 200, f"/message/send 接口状态码应为 200，但实际为 {response.status_code}")
+        self.assertEqual(response.headers.get('Content-Type'), 'application/json', f"/message/send 接口 Content-Type 应为 application/json，但实际为 {response.headers.get('Content-Type')}")
+        res = response.json()
+        print(json.dumps(res, indent=2, ensure_ascii=False))
+        assert res.get("error") is None, "错误不为空，请检查"
+        assert res.get("result"), "返回的结果为空，请检查数据"
+        print(f"/events/query 测试花费时间: {time.time() - start_time}秒")
     def test_list_tasks(self):
         """
         测试 /task/list 接口
