@@ -225,7 +225,6 @@ class BasicAgent:
                          for tc in tool_calls:
                              if tc.get("function", {}).get("name"):
                                  # 对工具进行参数的修改
-                                 tc = self.modify_match_function_parameters(tc, sessionId)
                                  task = asyncio.create_task(process_tool_call(tc, self.servers, self.quiet_mode))
 
                                  # 每1秒 yield 一次“running”直到 task 完成
