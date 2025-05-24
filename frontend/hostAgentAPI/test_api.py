@@ -95,7 +95,8 @@ class ConversationServerTestCase(unittest.TestCase):
 
         url = f"{self.base_url}/message/send"
         headers = {'Content-Type': 'application/json'}
-        text = "你好"
+        # text = "你好"
+        text = "什么是LNG?"
         message_payload = {
             "params": {
                 "role": "user",
@@ -197,7 +198,7 @@ class ConversationServerTestCase(unittest.TestCase):
         测试查询事件的接口
         """
         # 可以先调用test_send_message创建1个conversation
-        conversation_id = "31429a79-b04f-4b62-96fc-bdbf12e76639"
+        conversation_id = "12daaca7-afe0-425d-a2da-032a63407109"
         url = f"{self.base_url}/events/query"
         headers = {'Content-Type': 'application/json'}
         message_payload = {

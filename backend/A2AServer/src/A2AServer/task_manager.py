@@ -49,6 +49,11 @@ def decode_tool_calls_to_string(raw_str: str) -> str:
 def decode_tool_call_result_to_string(raw_str: str) -> str:
     # tool执行的结果
     print("decode_tool_call_result_to_string:", raw_str)
+    try:
+        calls_results = json.loads(raw_str)
+        content = calls_results.get("content", "")
+    except Exception as e:
+        logger.error(f"decode_tool_call_result_to_string error: {e}")
     return raw_str
 
 
