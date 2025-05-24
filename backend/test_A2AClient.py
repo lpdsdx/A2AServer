@@ -27,7 +27,7 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
     """
     测试 A2A 客户端的功能
     """
-    AGENT_URL = "http://localhost:10005"
+    AGENT_URL = "http://localhost:10004"
     if os.environ.get("AGENT_URL"):
         AGENT_URL = os.environ.get("AGENT_URL")
     async def asyncSetUp(self):
@@ -157,7 +157,8 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
 
         session_id = uuid4().hex
         test_scenarios = [
-            {"prompt": "什么是LNG?", "session_id": session_id},
+            # {"prompt": "什么是LNG?", "session_id": session_id},
+            {"prompt": "小米最新新闻?", "session_id": session_id},
         ]
         print("\n--- 运行测试场景 ---")
         for i, scenario in enumerate(test_scenarios):
