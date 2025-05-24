@@ -1,0 +1,11 @@
+输入: {"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"sampling":{},"roots":{"listChanged":true}},"clientInfo":{"name":"mcp","version":"0.1.0"}},"jsonrpc":"2.0","id":0}
+STDERR: [05/25/25 07:06:25] INFO     Found server "搜索工具" in               cli.py:352
+STDERR:                              /Users/admin/git/A2AServer/backend/DeepS           
+STDERR:                              earch/mcpserver/search_tool.py                     
+STDERR:                     INFO     Starting server "搜索工具"...         server.py:262
+输出: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{},"prompts":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"搜索工具","version":"1.9.0"}}}
+输入: {"method":"notifications/initialized","jsonrpc":"2.0"}
+输入: {"method":"tools/list","jsonrpc":"2.0","id":1}
+输出: {"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"search_internet","description":"\n    利用搜索引擎搜索网络内容\n    :param query: 搜索的词语和句子\n    :return:\n    ","inputSchema":{"properties":{"query":{"title":"Query","type":"string"}},"required":["query"],"title":"search_internetArguments","type":"object"}}]}}
+输入: {"method":"tools/call","params":{"name":"search_internet","arguments":{"query":"小米 最新新闻 2025年5月"}},"jsonrpc":"2.0","id":2}
+输出: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"小米汽车SU7正式发布，售价21.59万元起，首批订单火爆。"}],"isError":false}}
