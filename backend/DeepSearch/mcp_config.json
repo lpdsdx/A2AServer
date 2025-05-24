@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "SearchTool": {
-      "command": "uv",
+      "command": "mcpserver/debug_utils.py",
       "args": [
-        "run",
-        "--with",
-        "fastmcp",
         "fastmcp",
         "run",
         "mcpserver/search_tool.py"
