@@ -45,7 +45,8 @@ const Conversation = () => {
         }
 
         return {
-            message_id: event.content?.metadata?.message_id || event.id,
+            event_id: event.id || uuidv4(),
+            message_id: event.content?.metadata?.message_id,
             role: event.actor === 'user' ? 'user' : (event.content?.role || 'agent'),
             content: contentParts,
             metadata: { conversation_id: event.content?.metadata?.conversation_id || currentConversationId },
@@ -87,11 +88,12 @@ const Conversation = () => {
                     console.log(`[${(elapsedTime / 1000).toFixed(1)}s] 轮询: 无法确定 ${trackedMessageId} 的处理状态，应该是已完成`);
                 }
 
-                // 2. 获取 /events/get
-                const eventsResponse = await api.getEvents();
+                // 2. 查询对应的conversation的所有事件 /events/query
+                const eventsResponse = await api.queryEvents(conversationId);
                 console.log("eventsResponse:", eventsResponse);
                 if (eventsResponse) {
                     const newMessagesFromEvents = [];
+                    let lastEmptyIdMsg = null; // 用于追踪最近一条 message_id 为空的消息
                     const sortedEvents = [...eventsResponse].sort((a, b) => a.timestamp - b.timestamp);
 
                     for (const event of sortedEvents) {
@@ -101,13 +103,29 @@ const Conversation = () => {
 
                             processedEventIds.current.add(event.id);
                             const formattedMessage = formatEventToMessage(event, conversationId);
-
                             const hasContent = formattedMessage.content.some(part =>
                                 (typeof part[0] === 'string' && part[0].trim() !== "") ||
                                 (typeof part[0] === 'object' && part[0] !== null)
                             );
                             if (hasContent) {
-                                newMessagesFromEvents.push(formattedMessage);
+                                if (formattedMessage.message_id) {
+                                    // 有 message_id，直接 push
+                                    newMessagesFromEvents.push(formattedMessage);
+                                    lastEmptyIdMsg = null; // 重置
+                                } else {
+                                    // message_id 为空
+                                    if (Array.isArray(formattedMessage.content) && Array.isArray(lastEmptyIdMsg?.content)) {
+                                        // 后续空 id，合并 content 到上一条空 id 消息
+                                        const lastType = lastEmptyIdMsg.content[0][1];
+                                        const currentType = formattedMessage.content[0][1];
+                                        // 合并文本（第 0 项），保留相同的类型（第 1 项）
+                                        const mergedText = lastEmptyIdMsg.content[0][0] + formattedMessage.content[0][0];
+                                        lastEmptyIdMsg.content[0][0] = mergedText;
+                                    } else {
+                                        // 首条空 id，直接 push
+                                        newMessagesFromEvents.push(formattedMessage);
+                                    }
+                                }
                             }
                         }
                     }
@@ -120,12 +138,13 @@ const Conversation = () => {
                             let newMessages = [...prevMessages]; // 创建数组的浅拷贝
 
                             for (const nm of newMessagesFromEvents) {
-                                if (currentMessageIds.has(nm.message_id)) continue;
 
                                 const lastMsg = newMessages[newMessages.length - 1];
 
                                 const nmText = nm.content?.map(p => p[0]).join('\n').trim();
                                 const lastText = lastMsg?.content?.map(p => p[0]).join('\n').trim();
+                                const lastMsgId = lastMsg?.message_id;
+                                const nmMsgId = nm.message_id;  //这条消息的 message_id
 
                                 if (lastMsg && nm.role === lastMsg.role && nmText === lastText) {
                                     // 创建 lastMsg 的副本并更新 dupCount
@@ -143,6 +162,7 @@ const Conversation = () => {
 
                             // 收到新消息时，重置轮询开始时间，延长最大轮询时间
                             pollingStartTime.current = Date.now();
+                            console.log("newMessages:",newMessages)
                             return newMessages;
                         });
                     }
@@ -226,8 +246,8 @@ const Conversation = () => {
           <div className="h-full overflow-y-auto">
             <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
               {messages.map((message) => (
-                <div key={message.message_id || uuidv4()} className="group">
-                  {message.content.some(part => part[1] === 'form') ? (
+                <div key={message.event_id || uuidv4()} className="group">
+                  {Array.isArray(message.content) && message.content.some(part => part[1] === 'form') ? (
                     <FormRenderer message={message} />
                   ) : (
                     <ChatBubble message={message} />

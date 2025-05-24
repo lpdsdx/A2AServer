@@ -199,3 +199,8 @@ export const updateApiKey = async (apiKey) => {
 export const getEvents = async () => {
     return request('/events/get', { method: 'POST', body: {} });
 };
+
+//根据对话id获取它的事件
+export const queryEvents = async (conversationId) => {
+  return request('/events/query', { method: 'POST', body: {params: { conversation_id: conversationId }} });
+};
