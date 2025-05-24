@@ -55,7 +55,7 @@ class BasicAgent:
         self.all_functions = []
         self.conversation = [] # Initial conversation might be built later in run() or here
         self.tool_ready = False
-        # 为啥在这里初始化工具后，工具就无法被调通呢，
+        # 只能做同步的事情，不能直接“等”异步的初始化完成，不能在这里初始化
         # loop = asyncio.get_event_loop()
         # try:
         #     self.tool_ready = loop.run_until_complete(self.setup_tools())
