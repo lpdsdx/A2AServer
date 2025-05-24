@@ -14,5 +14,3 @@ BYTEDANCE_API_KEY=xxxx
 # 智谱模型, python main.py --provider zhipu --model glm-4
 ZHIPU_API_KEY=XXXX
 
-# MCP单个工具的最大超时时间，默认为8秒，如果你的工具耗时很长，可以增加这个时间
-MCP_TIMEOUT=8

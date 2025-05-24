@@ -232,7 +232,7 @@ class BasicAgent:
                                      await asyncio.sleep(1)
                                      yield {
                                          "role": "assistant",
-                                         "text": ".",  # 表示调用工具分析中，抛出一些空的内容
+                                         "text": " ",  # 表示调用工具分析中，抛出一些空的内容
                                          "type": "reasoning"
                                      }
 
