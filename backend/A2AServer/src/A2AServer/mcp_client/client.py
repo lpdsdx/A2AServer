@@ -132,11 +132,16 @@ class MCPClient:
 
     async def start(self) -> bool:
         """Initialize the server connection."""
-        command = (
-            shutil.which("npx")
-            if self.config["command"] == "npx"
-            else self.config["command"]
-        )
+        if self.config["command"] == "npx":
+            command = shutil.which("npx")
+            if command is None:
+                logger.error(f"npx命令没有安装，请先进行安装")
+        elif self.config["command"] == "uv":
+            command = shutil.which("uv")
+            if command is None:
+                logger.error(f"uv命令没有安装，请先进行安装")
+        else:
+            command = self.config["command"]
         if command is None:
             raise ValueError("The command must be a valid string and cannot be None.")
 
@@ -426,7 +431,7 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
         }
 
     srv_name, tool_name = parts
-    print(f"\n调用process_tool_call开始获取运行MCP工具{tool_name} from {srv_name} {json.dumps(func_args, ensure_ascii=False)}")
+    logger.info(f"\n调用process_tool_call开始获取运行MCP工具{tool_name} from {srv_name} {json.dumps(func_args, ensure_ascii=False)}")
 
     if srv_name not in servers:
         print(f"错误：注意，模型生成的服务器{srv_name}不在服务器列表中，请检查配置文件，或者查看你的mcp配置是否包含了特殊字符_")
@@ -455,14 +460,13 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
                     "name": func_name,
                     "content": json.dumps({"error": f"Missing required parameter: {param}"})
                 }
-    print(f"开始调用call_tool")
+    logger.info(f"开始调用call_tool: {tool_name}")
     result = await servers[srv_name].call_tool(tool_name, func_args)
-    print(f"工具{tool_name}运行结果:")
     if "error" in result:
         result_content = result["error"]
     else:
         result_content = "\n".join(content["text"] for content in result["content"])
-
+    logger.info(f"工具{tool_name}运行结果: {result_content}")
     return {
         "role": "tool",
         "tool_call_id": tc["id"],
