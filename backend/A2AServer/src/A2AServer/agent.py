@@ -138,7 +138,7 @@ class BasicAgent:
             self.tool_ready = False # Cannot run without servers
             return False
 
-        print(f"Found {len(self.all_functions)} tools.")
+        print(f"Found {len(self.all_functions)} tools: {json.dumps(self.all_functions, ensure_ascii=False)}")
         self.tool_ready = True # Setup was successful
         return True
 
@@ -208,7 +208,7 @@ class BasicAgent:
                  else:
                      remaining = chunk["assistant_text"][len(accumulated_text):]
                      if remaining:
-                         yield {"text": remaining, "type": "normal"} # YIELD here as well 剩余文本
+                         yield {"text": remaining, "type": "reasoning"} # YIELD here as well 剩余文本
 
                      tool_calls = chunk.get("tool_calls", [])
                      if tool_calls:
@@ -225,7 +225,20 @@ class BasicAgent:
                          for tc in tool_calls:
                              if tc.get("function", {}).get("name"):
                                  # 对工具进行参数的修改
-                                 result = await process_tool_call(tc, self.servers, self.quiet_mode) # AWAIT valid here
+                                 tc = self.modify_match_function_parameters(tc, sessionId)
+                                 task = asyncio.create_task(process_tool_call(tc, self.servers, self.quiet_mode))
+
+                                 # 每1秒 yield 一次“running”直到 task 完成
+                                 while not task.done():
+                                     await asyncio.sleep(1)
+                                     yield {
+                                         "role": "assistant",
+                                         "text": ".",  # 表示调用工具分析中，抛出一些空的内容
+                                         "type": "reasoning"
+                                     }
+
+                                 # 一旦任务完成
+                                 result = await task
                                  if result:
                                      self.conversation.append(result)
                                      tool_calls_processed = True
@@ -297,7 +310,6 @@ class BasicAgent:
 
     async def stream(self, query: str, sessionId: str) -> AsyncIterable[dict[str, Any]]:
         """Stream updates from the MCP agent.
-        # sessionId作为知识库的关联信息, 重新初始化知识库的mcpClient
         """
         print(f"问题: {query}的sessionId为： {sessionId}")
         try:

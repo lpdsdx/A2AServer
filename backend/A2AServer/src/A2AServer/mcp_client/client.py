@@ -105,6 +105,9 @@ class SSEMCPClient:
                 else:
                     logger.error("Max retries reached. Failing.")
                     raise
+
+    async def stop(self):
+        await self.cleanup()
     async def cleanup(self):
         try:
             if self.session:
@@ -238,6 +241,8 @@ class MCPClient:
                     logger.error("Max retries reached. Failing.")
                     raise
 
+    async def stop(self):
+        await self.cleanup()
     async def cleanup(self) -> None:
         """Clean up server resources."""
         async with self._cleanup_lock:
