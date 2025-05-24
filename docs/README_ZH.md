@@ -14,6 +14,33 @@
 
 这两个文档提供了关于不同大型语言模型配置的详细信息，包括配置参数、使用方法以及相关的注意事项。
 
+## Debug技巧
+记录MCP的工具的输入和输出,修改backend/DeepSearch/mcp_config.json的启动从uv启动到debug_utils.py启动，
+```
+    "SearchTool": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "mcpserver/search_tool.py"
+      ]
+    }
+```
+```
+    "SearchTool": {
+      "command": "mcpserver/debug_utils.py",
+      "args": [
+        "fastmcp",
+        "run",
+        "mcpserver/search_tool.py"
+      ]
+    },
+```
+backend/DeepSearch/mcpserver/mcp.log中显示了详细的使用日志。
+
 ## 问题总结
 1. Deepseek官方Deepseek-R1模型不支持函数调用，因此使用Deepseek的R1模型会报错。但是火山引擎的deepseek-r1模型可以支持函数调用和思考，推荐。
 2. 保持传入Agent的会话的session_id的唯一，这是必须的。

@@ -6,24 +6,32 @@
 # @Contact : github: johnson7788
 # @Desc  : 记录MCP交互时的协议信息，方便进行Debug
 
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# @Date  : 2025/5/25 06:55
+# @File  : debug_utils.py
+# @Author: johnson
+# @Contact : github: johnson7788
+# @Desc  : 记录MCP交互协议信息，便于调试
+
 import sys
 import subprocess
 import threading
 import argparse
 import os
 
-# --- Configuration ---
+# --- 配置 ---
 LOG_FILE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "mcp.log")
-# --- End Configuration ---
+# --- 配置结束 ---
 
-# --- Argument Parsing ---
+# --- 命令行参数解析 ---
 parser = argparse.ArgumentParser(
-    description="Wrap a command, passing STDIN/STDOUT verbatim while logging them.",
+    description="包装命令，透传STDIN/STDOUT并记录日志。",
     usage="%(prog)s <command> [args...]"
 )
-# Capture the command and all subsequent arguments
-parser.add_argument('command', nargs=argparse.REMAINDER, help='The command and its arguments to execute.')
+parser.add_argument('command', nargs=argparse.REMAINDER, help='要执行的命令及其参数')
 
+# 清空日志文件
 open(LOG_FILE, 'w', encoding='utf-8')
 
 if len(sys.argv) == 1:
@@ -33,120 +41,143 @@ if len(sys.argv) == 1:
 args = parser.parse_args()
 
 if not args.command:
-    print("Error: No command provided.", file=sys.stderr)
+    print("错误：未提供命令。", file=sys.stderr)
     parser.print_help(sys.stderr)
     sys.exit(1)
 
 target_command = args.command
-# --- End Argument Parsing ---
+# --- 参数解析结束 ---
 
-# --- I/O Forwarding Functions ---
-# These will run in separate threads
+# --- 输入/输出转发函数 ---
+# 这些函数将在单独线程中运行
 
 def forward_and_log_stdin(proxy_stdin, target_stdin, log_file):
-    """Reads from proxy's stdin, logs it, writes to target's stdin."""
+    """从代理的stdin读取，记录日志并写入目标stdin"""
     try:
         while True:
-            # Read line by line from the script's actual stdin
             line_bytes = proxy_stdin.readline()
-            if not line_bytes:  # EOF reached
+            if not line_bytes:  # 到达EOF
                 break
 
-            # Decode for logging (assuming UTF-8, adjust if needed)
+            # 解码用于日志记录（假设为UTF-8）
             try:
-                 line_str = line_bytes.decode('utf-8')
+                line_str = line_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                 line_str = f"[Non-UTF8 data, {len(line_bytes)} bytes]\n" # Log representation
+                line_str = f"[非UTF-8数据，{len(line_bytes)}字节]\n"
 
-            # Log with prefix
+            # 记录带前缀的日志
             log_file.write(f"输入: {line_str}")
-            log_file.flush() # Ensure log is written promptly
+            log_file.flush()  # 确保日志及时写入
 
-            # Write the original bytes to the target process's stdin
+            # 将原始字节写入目标进程的stdin
             target_stdin.write(line_bytes)
-            target_stdin.flush() # Ensure target receives it promptly
+            target_stdin.flush()  # 确保目标进程及时接收
 
     except Exception as e:
-        # Log errors happening during forwarding
+        # 记录转发过程中的错误
         try:
-            log_file.write(f"!!! STDIN Forwarding Error: {e}\n")
+            log_file.write(f"!!! STDIN转发错误: {e}\n")
             log_file.flush()
-        except: pass # Avoid errors trying to log errors if log file is broken
+        except:
+            pass  # 忽略日志记录错误
 
     finally:
-        # Important: Close the target's stdin when proxy's stdin closes
-        # This signals EOF to the target process (like test.sh's read loop)
+        # 关闭目标stdin，通知目标进程EOF
         try:
             target_stdin.close()
-            log_file.write("--- STDIN stream closed to target ---\n")
+            log_file.write("--- STDIN流关闭 ---\n")
             log_file.flush()
         except Exception as e:
-             try:
-                log_file.write(f"!!! Error closing target STDIN: {e}\n")
+            try:
+                log_file.write(f"!!! 关闭目标STDIN错误: {e}\n")
                 log_file.flush()
-             except: pass
-
+            except:
+                pass
 
 def forward_and_log_stdout(target_stdout, proxy_stdout, log_file):
-    """Reads from target's stdout, logs it, writes to proxy's stdout."""
+    """从目标stdout读取，记录日志并写入代理stdout"""
     try:
         while True:
-            # Read line by line from the target process's stdout
             line_bytes = target_stdout.readline()
-            if not line_bytes: # EOF reached (process exited or closed stdout)
+            if not line_bytes:  # 到达EOF
                 break
 
-            # Decode for logging
+            # 解码用于日志记录
             try:
-                 line_str = line_bytes.decode('utf-8')
+                line_str = line_bytes.decode('utf-8')
             except UnicodeDecodeError:
-                 line_str = f"[Non-UTF8 data, {len(line_bytes)} bytes]\n"
+                line_str = f"[非UTF-8数据，{len(line_bytes)}字节]\n"
 
-            # Log with prefix
+            # 记录带前缀的日志
             log_file.write(f"输出: {line_str}")
             log_file.flush()
 
-            # Write the original bytes to the script's actual stdout
+            # 将原始字节写入代理stdout
             proxy_stdout.write(line_bytes)
-            proxy_stdout.flush() # Ensure output is seen promptly
+            proxy_stdout.flush()  # 确保输出及时显示
 
     except Exception as e:
         try:
-            log_file.write(f"!!! STDOUT Forwarding Error: {e}\n")
+            log_file.write(f"!!! STDOUT转发错误: {e}\n")
             log_file.flush()
-        except: pass
+        except:
+            pass
     finally:
         try:
             log_file.flush()
-        except: pass
-        # Don't close proxy_stdout (sys.stdout) here
+        except:
+            pass
 
-# --- Main Execution ---
+def forward_and_log_stderr(target_stderr, proxy_stderr, log_file):
+    """从目标stderr读取，记录日志并写入代理stderr"""
+    try:
+        while True:
+            line_bytes = target_stderr.readline()
+            if not line_bytes:
+                break
+            try:
+                line_str = line_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                line_str = f"[非UTF-8数据，{len(line_bytes)}字节]\n"
+            log_file.write(f"STDERR: {line_str}")
+            log_file.flush()
+            proxy_stderr.write(line_bytes)
+            proxy_stderr.flush()
+    except Exception as e:
+        try:
+            log_file.write(f"!!! STDERR转发错误: {e}\n")
+            log_file.flush()
+        except:
+            pass
+    finally:
+        try:
+            log_file.flush()
+        except:
+            pass
+
+# --- 主执行逻辑 ---
 process = None
 log_f = None
-exit_code = 1 # Default exit code in case of early failure
+exit_code = 1  # 默认退出码，处理早期失败
 
 try:
-    # Open log file in append mode ('a') for the threads
+    # 以追加模式打开日志文件
     log_f = open(LOG_FILE, 'a', encoding='utf-8')
 
-    # Start the target process
-    # We use pipes for stdin/stdout
-    # We work with bytes (bufsize=0 for unbuffered binary, readline() still works)
-    # stderr=subprocess.PIPE could be added to capture stderr too if needed.
+    # 启动目标进程
     process = subprocess.Popen(
         target_command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, # Capture stderr too, good practice
-        bufsize=0 # Use 0 for unbuffered binary I/O
+        stderr=subprocess.PIPE,  # 捕获stderr
+        bufsize=0  # 无缓冲二进制I/O
     )
 
-    # Pass binary streams to threads
+    # 创建并启动转发线程
     stdin_thread = threading.Thread(
         target=forward_and_log_stdin,
         args=(sys.stdin.buffer, process.stdin, log_f),
-        daemon=True # Allows main thread to exit even if this is stuck (e.g., waiting on stdin) - reconsider if explicit join is needed
+        daemon=True  # 主线程退出时终止
     )
 
     stdout_thread = threading.Thread(
@@ -155,90 +186,56 @@ try:
         daemon=True
     )
 
-    # Optional: Handle stderr similarly (log and pass through)
-    stderr_thread = threading.Thread(
-        target=forward_and_log_stdout, # Can reuse the function
-        args=(process.stderr, sys.stderr.buffer, log_f), # Pass stderr streams
-        # Add a different prefix in the function if needed, or modify function
-        # For now, it will log with "STDOUT:" prefix - might want to change function
-        # Let's modify the function slightly for this
-        daemon=True
-    )
-    # A slightly modified version for stderr logging
-    def forward_and_log_stderr(target_stderr, proxy_stderr, log_file):
-        """Reads from target's stderr, logs it, writes to proxy's stderr."""
-        try:
-            while True:
-                line_bytes = target_stderr.readline()
-                if not line_bytes: break
-                try: line_str = line_bytes.decode('utf-8')
-                except UnicodeDecodeError: line_str = f"[Non-UTF8 data, {len(line_bytes)} bytes]\n"
-                log_file.write(f"STDERR: {line_str}") # Use STDERR prefix
-                log_file.flush()
-                proxy_stderr.write(line_bytes)
-                proxy_stderr.flush()
-        except Exception as e:
-            try:
-                log_file.write(f"!!! STDERR Forwarding Error: {e}\n")
-                log_file.flush()
-            except: pass
-        finally:
-            try:
-                log_file.flush()
-            except: pass
-
     stderr_thread = threading.Thread(
         target=forward_and_log_stderr,
         args=(process.stderr, sys.stderr.buffer, log_f),
         daemon=True
     )
 
-
-    # Start the forwarding threads
+    # 启动线程
     stdin_thread.start()
     stdout_thread.start()
-    stderr_thread.start() # Start stderr thread too
+    stderr_thread.start()
 
-    # Wait for the target process to complete
+    # 等待目标进程完成
     process.wait()
     exit_code = process.returncode
 
-    # Wait briefly for I/O threads to finish flushing last messages
-    # Since they are daemons, they might exit abruptly with the main thread.
-    # Joining them ensures cleaner shutdown and logging.
-    # We need to make sure the pipes are closed so the reads terminate.
-    # process.wait() ensures target process is dead, pipes should close naturally.
-    stdin_thread.join(timeout=1.0) # Add timeout in case thread hangs
+    # 等待I/O线程完成最后消息的刷新
+    stdin_thread.join(timeout=1.0)
     stdout_thread.join(timeout=1.0)
     stderr_thread.join(timeout=1.0)
 
-
 except Exception as e:
-    print(f"MCP Logger Error: {e}", file=sys.stderr)
-    # Try to log the error too
+    print(f"MCP日志记录错误: {e}", file=sys.stderr)
     if log_f and not log_f.closed:
         try:
-            log_f.write(f"!!! MCP Logger Main Error: {e}\n")
+            log_f.write(f"!!! MCP日志主错误: {e}\n")
             log_f.flush()
-        except: pass # Ignore errors during final logging attempt
-    exit_code = 1 # Indicate logger failure
+        except:
+            pass
+    exit_code = 1
 
 finally:
-    # Ensure the process is terminated if it's still running (e.g., if logger crashed)
+    # 确保目标进程终止
     if process and process.poll() is None:
         try:
             process.terminate()
-            process.wait(timeout=1.0) # Give it a moment to terminate
-        except: pass # Ignore errors during cleanup
-        if process.poll() is None: # Still running?
-             try: process.kill() # Force kill
-             except: pass # Ignore kill errors
+            process.wait(timeout=1.0)
+        except:
+            pass
+        if process.poll() is None:
+            try:
+                process.kill()  # 强制终止
+            except:
+                pass
 
-    # Final log message
+    # 关闭日志文件
     if log_f and not log_f.closed:
         try:
             log_f.close()
-        except: pass # Ignore errors during final logging attempt
+        except:
+            pass
 
-    # Exit with the target process's exit code
+    # 使用目标进程的退出码退出
     sys.exit(exit_code)
