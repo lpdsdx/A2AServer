@@ -8,6 +8,7 @@ import sys
 import json
 import asyncio
 import logging
+import traceback
 from typing import Any, Dict, List, Optional, Union, AsyncGenerator
 import shutil
 from contextlib import AsyncExitStack
@@ -243,7 +244,7 @@ class MCPClient:
                     logger.info(f"Retrying in {delay} seconds...")
                     await asyncio.sleep(delay)
                 else:
-                    logger.error("Max retries reached. Failing.")
+                    logger.error(f"Max retries run tools reached.: {traceback.format_exc()}")
                     raise
 
     async def stop(self):
