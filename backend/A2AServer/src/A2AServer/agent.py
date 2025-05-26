@@ -1,3 +1,4 @@
+import collections
 import logging
 import os
 import traceback
@@ -53,7 +54,7 @@ class BasicAgent:
         # Initialize attributes that will be populated asynchronously in setup()
         self.servers = {}
         self.all_functions = []
-        self.conversation = [] # Initial conversation might be built later in run() or here
+        self.session_conversations = collections.defaultdict(list) # Initial conversation might be built later in run() or here
         self.tool_ready = False
         # 只能做同步的事情，不能直接“等”异步的初始化完成，不能在这里初始化
         # loop = asyncio.get_event_loop()
@@ -126,7 +127,8 @@ class BasicAgent:
                 if not self.quiet_mode:
                     print(f"[WARN] Exception starting server {server_name}: {e}")
                 # Ensure client is stopped if created before exception
-                if 'client' in locals() and client: await client.stop()
+                if 'client' in locals() and client:
+                    await client.stop()
 
 
         self.servers = successful_servers
@@ -159,19 +161,19 @@ class BasicAgent:
 
 
         # Build initial conversation (system message + user query)
-        self._build_initial_conversation(user_query) # This helper can be synchronous
+        self._build_initial_conversation(sessionId, user_query) # This helper can be synchronous
 
 
         # try:
         if stream:
             return self._stream_response_generator(sessionId) # Returns an async generator
         else:
-            return await self._non_stream_response() # Returns the final text
+            return await self._non_stream_response(sessionId) # Returns the final text
         # finally:
         #     # Ensure cleanup is called when run() finishes or an exception occurs
         #     await self.cleanup() # <-- AWAIT is valid here
 
-    def _build_initial_conversation(self, user_query):
+    def _build_initial_conversation(self, sessionId, user_query):
          # Helper method to build the initial conversation list (synchronous)
          self.conversation = []
          # 默认的prompt
@@ -179,20 +181,53 @@ class BasicAgent:
          try:
              with open(self.chosen_model["prompt_file"], "r", encoding="utf-8") as f:
                  agent_prompt = f.read()
-             self.conversation.append({"role": "system", "content": agent_prompt})
+             self.session_conversations[sessionId].append({"role": "system", "content": agent_prompt})
          except Exception as e:
              logger.warning(f"Failed to read Agent prompt file: {e}")
-             self.conversation.append({"role": "system", "content": agent_prompt})
+             self.session_conversations[sessionId].append({"role": "system", "content": agent_prompt})
         # 加上当前的时间
-         self.conversation[0]['content'] = f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}。" + self.conversation[0]['content']
-         self.conversation.append({"role": "user", "content": user_query})
-         print(f"发起的conversation: {self.conversation}")
+         self.session_conversations[sessionId][0]['content'] = f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}。" + self.session_conversations[sessionId][0]['content']
+         self.session_conversations[sessionId].append({"role": "user", "content": user_query})
+         print(f"发起的conversation: {self.session_conversations[sessionId]}")
+
+    def modify_match_function_parameters(self, tc, sessionId):
+        """
+        修改函数中的需要被替换的参数
+        :param tc:  {'function': {'arguments': '{"keyword": "LNG"}', 'name': 'knowledgeRetrieval_query_RAG_by_keyword'}, 'id': 'call_0_468c03da-b7ee-40f9-9443-336822ad3f72', 'type': 'function'}
+        :return:
+        """
+        print(f"modify_match_function_parameters：检查是否需要对工具进行参数的修改, sessionId: {sessionId}, 参数是: {tc}")
+        # 工具在要进行修改参数的列表中，那么就修改工具的参数
+        function_name = tc["function"]["name"]
+        if function_name in MATCH_TOOL_PARAMETERS:
+            try:
+                change_parameters = MATCH_TOOL_PARAMETERS[function_name]  # 需要修改的参数名称有哪些
+                rag_parameters = base64_to_dict(sessionId)  # rag_parameters是参数的值
+                print(
+                    f"函数{function_name}的参数要被MCP调用之前进行额外的修改, 需要修改的参数是: {change_parameters}, 通过sessionId传入的参数是:{rag_parameters}")
+                # 额外添加tc的function中的arguments中的值
+                fc_arguments = tc["function"]["arguments"]
+                fc_arguments_dict = json.loads(fc_arguments)
+                for change_parameter in change_parameters:
+                    if change_parameter in rag_parameters:
+                        fc_arguments_dict[change_parameter] = rag_parameters[change_parameter]
+                    else:
+                        print(f"Warning: {function_name}中的参数需要被修改，但是用户的sessionId中没有传入对应的参数: {sessionId}")
+                # 变回字符串
+                tc["function"]["arguments"] = json.dumps(fc_arguments_dict, ensure_ascii=False)
+                return tc
+            except Exception as e:
+                print(f"Error: 错误， 进行参数修改时发生了错误, {e}，不对参数进行修改")
+                return tc
+        else:
+            print(f"调用的工具{function_name}不需要进行额外的修改，因为没有匹配到MATCH_TOOL_PARAMETERS")
+            return tc
 
     async def _stream_response_generator(self, sessionId):
          """Handles the streaming response logic (async generator)."""
          #分5种返回类型，1. reasoning, 2. normal,  4. tool_call, 5. tool_result
          while True:
-             generator = await generate_text(self.conversation, self.chosen_model, self.all_functions, stream=True)
+             generator = await generate_text(self.session_conversations[sessionId], self.chosen_model, self.all_functions, stream=True)
              accumulated_text = ""
              tool_calls_processed = False
 
@@ -219,7 +254,7 @@ class BasicAgent:
                              "content": chunk["assistant_text"],
                              "tool_calls": tool_calls
                          }
-                         self.conversation.append(assistant_message)
+                         self.session_conversations[sessionId].append(assistant_message)
                          yield {"text": f"{json.dumps(tool_calls, ensure_ascii=False)}", "type": "tool_call"}
 
                          for tc in tool_calls:
@@ -239,19 +274,19 @@ class BasicAgent:
                                  # 一旦任务完成
                                  result = await task
                                  if result:
-                                     self.conversation.append(result)
+                                     self.session_conversations[sessionId].append(result)
                                      tool_calls_processed = True
                                      yield {"text": f"{json.dumps(result)}", "type": "tool_result"}
              if not tool_calls_processed:
                  break
 
 
-    async def _non_stream_response(self):
+    async def _non_stream_response(self, sessionId):
          """Handles the non-streaming response logic."""
          # Move the non-stream logic from original init here
          final_text = ""
          while True:
-             gen_result = await generate_text(self.conversation, self.chosen_model, self.all_functions, stream=False) # AWAIT valid here
+             gen_result = await generate_text(self.session_conversations[sessionId], self.chosen_model, self.all_functions, stream=False) # AWAIT valid here
 
              assistant_text = gen_result["assistant_text"]
              final_text = assistant_text
@@ -262,7 +297,7 @@ class BasicAgent:
                  for tc in tool_calls:
                      tc["type"] = "function"
                  assistant_message["tool_calls"] = tool_calls
-             self.conversation.append(assistant_message)
+             self.session_conversations[sessionId].append(assistant_message)
              logger.info(f"Added assistant message: {json.dumps(assistant_message, indent=2)}")
 
              if not tool_calls:
@@ -271,7 +306,7 @@ class BasicAgent:
              for tc in tool_calls:
                  result = await process_tool_call(tc, self.servers, self.quiet_mode) # AWAIT valid here
                  if result:
-                     self.conversation.append(result)
+                     self.session_conversations[sessionId].append(result)
                      logger.info(f"Added tool result: {json.dumps(result, indent=2)}")
 
          return final_text
@@ -280,9 +315,6 @@ class BasicAgent:
     async def cleanup(self):
         """Clean up servers and log messages."""
         print("Cleaning up servers...")
-        if self.log_messages_path:
-            # Pass attributes needed for logging
-            await log_messages_to_file(self.conversation, self.all_functions, self.log_messages_path) # AWAIT valid here
         for cli in self.servers.values():
             await cli.stop() # AWAIT valid here
         print("Cleanup complete.")

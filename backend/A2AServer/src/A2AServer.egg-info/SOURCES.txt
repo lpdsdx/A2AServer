@@ -24,7 +24,10 @@ src/A2AServer/mcp_client/client.py
 src/A2AServer/mcp_client/utils.py
 src/A2AServer/mcp_client/providers/__init__.py
 src/A2AServer/mcp_client/providers/anthropic.py
+src/A2AServer/mcp_client/providers/bytedance.py
 src/A2AServer/mcp_client/providers/deepseek.py
 src/A2AServer/mcp_client/providers/lmstudio.py
 src/A2AServer/mcp_client/providers/ollama.py
 src/A2AServer/mcp_client/providers/openai.py
+src/A2AServer/mcp_client/providers/vllm.py
+src/A2AServer/mcp_client/providers/zhipu.py
