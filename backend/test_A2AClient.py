@@ -27,7 +27,7 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
     """
     测试 A2A 客户端的功能
     """
-    AGENT_URL = "http://localhost:10004"
+    AGENT_URL = "http://localhost:10003"
     if os.environ.get("AGENT_URL"):
         AGENT_URL = os.environ.get("AGENT_URL")
     async def asyncSetUp(self):
@@ -198,6 +198,45 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
         session_id = uuid4().hex
         test_scenarios = [
             {"prompt": "5月19日内蒙古利润时多少？", "session_id": session_id},
+        ]
+        print("\n--- 运行测试场景 ---")
+        for i, scenario in enumerate(test_scenarios):
+            print(f"\n--- 开始场景 {i+1}/{len(test_scenarios)} ---")
+            current_task_id = uuid4().hex
+            current_session_id = scenario.get("session_id", uuid4().hex)
+            file_path_for_scenario = scenario.get("file_path", "")
+
+            task_result = await self._send_prompt_and_get_result(
+                client=self.client,
+                agent_card_capabilities=self.card.capabilities,
+                prompt=scenario["prompt"],
+                session_id=current_session_id,
+                task_id=current_task_id,
+                file_path=file_path_for_scenario,
+                use_push_notifications=self.use_push_notifications,
+                notification_receiver_host=self.notification_receiver_host,
+                notification_receiver_port=self.notification_receiver_port,
+            )
+            artifacts = task_result.result.artifacts
+            for artifact in artifacts:
+                parts = artifact.parts
+                for part in parts:
+                    print(part.text, end="")
+            self.assertIsNotNone(task_result, f"场景 {i+1} 未能获取任务结果")
+            self.assertIsNotNone(task_result.result, f"场景 {i+1} 的任务结果为空")
+            print(f"\n--- 场景 {i+1} 测试完成 ---")
+
+        print("\n--- 所有测试场景完成 ---")
+    async def test_send_prompt_and_get_result_lng1(self):
+        """
+        测试发送 prompt 并获取结果的场景。
+        遍历测试用例并断言结果不为空。
+        """
+        self.assertIsNotNone(self.client, "客户端未成功初始化")
+        self.assertIsNotNone(self.card, "Agent Card 未成功获取")
+        session_id = uuid4().hex
+        test_scenarios = [
+            {"prompt": "目前浙江地区LNG送到价格是多少？", "session_id": session_id},
         ]
         print("\n--- 运行测试场景 ---")
         for i, scenario in enumerate(test_scenarios):
