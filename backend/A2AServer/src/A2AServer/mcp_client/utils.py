@@ -31,7 +31,7 @@ def load_mcp_config_from_file(config_path="mcp_config.json") -> dict:
         SystemExit: If the file is not found or contains invalid JSON
     """
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
         print(f"Error: {config_path} not found.")
