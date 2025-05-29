@@ -4,6 +4,7 @@
 
 本项目的目标是为 A2A的协调者和组织者的 Agent 提供启动和管理功能的 API 接口。通过这些接口，可以方便地和其它Agent进行交互，从而实现对其它Agent控制。
 
+
 **快速开始：**
 
 1.  **环境准备：**
@@ -12,8 +13,13 @@
         ```bash
         pip install -r requirements.txt
         ```
+2. **配置模型：**
+    * cp env_template.txt 为 .env 
+    * 修改/hostAgentAPI/hosts/multiagent/agent.py中的模型，
+    * model=LiteLlm(model="deepseek/deepseek-chat", api_key="xxx", api_base="")
 
-2.  **启动 API 服务：**
+
+3. **启动 API 服务：**
     * 在项目根目录下，运行以下命令启动 API 服务：
         ```bash
         python api.py
