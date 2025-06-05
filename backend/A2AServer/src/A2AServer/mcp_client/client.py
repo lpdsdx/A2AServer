@@ -9,6 +9,7 @@ import json
 import asyncio
 import logging
 import traceback
+from datetime import timedelta
 from typing import Any, Dict, List, Optional, Union, AsyncGenerator
 import shutil
 from contextlib import AsyncExitStack
@@ -82,7 +83,7 @@ class SSEMCPClient:
         while attempt < retries:
             try:
                 logger.info(f"开始使用SSE MCP协议调用工具，tool_name: {tool_name}, arguments: {arguments}")
-                response = await self.session.call_tool(tool_name, arguments)
+                response = await self.session.call_tool(tool_name, arguments, read_timeout_seconds=timedelta(seconds=6))
                 # 将 pydantic 模型转换为字典格式
                 return response.model_dump() if hasattr(response, 'model_dump') else response
             except ClosedResourceError as e:
@@ -222,8 +223,8 @@ class MCPClient:
         attempt = 0
         while attempt < retries:
             try:
-                logger.info(f"Executing {tool_name}...")
-                response = await self.session.call_tool(tool_name, arguments)
+                logger.info(f"执行工具: {tool_name}...，最多等待6秒")
+                response = await self.session.call_tool(tool_name, arguments, read_timeout_seconds=timedelta(seconds=6))
                 return response.model_dump() if hasattr(response, 'model_dump') else response
             except ClosedResourceError as e:
                 logger.warning(f"Session closed: {e.__repr__()}, attempting to restart session.")
