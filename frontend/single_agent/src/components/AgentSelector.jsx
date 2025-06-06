@@ -4,6 +4,7 @@ const PRESET_AGENTS = [
   { name: "http://localhost:10003", url: "http://localhost:10003" },
   { name: "http://localhost:10004", url: "http://localhost:10004" },
   { name: "http://localhost:10005", url: "http://localhost:10005" },
+  { name: "http://localhost:10006", url: "http://localhost:10006" },
 ];
 
 function AgentSelector({ onAgentSelect, isLoading }) {
