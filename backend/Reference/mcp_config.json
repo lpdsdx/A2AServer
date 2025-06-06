@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "SearchTool": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fastmcp",
+        "fastmcp",
+        "run",
+        "mcpserver/rag_tool.py"
+      ]
+    }
+  }
+}

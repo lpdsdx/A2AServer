@@ -464,14 +464,27 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
                 }
     logger.info(f"开始调用call_tool: {tool_name}")
     result = await servers[srv_name].call_tool(tool_name, func_args)
-    if "error" in result:
+    if result is None:
+        result_content = f"工具调用失败: {tool_name}"
+    elif "error" in result:
         result_content = result["error"]
     else:
         result_content = "\n".join(content["text"] for content in result["content"])
     logger.info(f"工具{tool_name}运行结果: {result_content}")
+    if os.environ["TOOL_RESULT_HANDLE"]:
+        # 动态加载todo
+        from tool_result import tool_process_result
+        tool_res = tool_process_result(tool_name, result_content)
+        if isinstance(tool_res, dict):
+            data = tool_res.get("data", [])
+            result_content = tool_res.get("contents")
+        else:
+            data = tool_res
+            result_content = tool_res
     return {
         "role": "tool",
         "tool_call_id": tc["id"],
         "name": func_name,
-        "content": result_content
+        "content": result_content,
+        "data": data  #函数的结果的原始数据
     }

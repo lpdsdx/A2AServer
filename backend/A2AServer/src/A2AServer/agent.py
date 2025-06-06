@@ -1,4 +1,5 @@
 import collections
+import copy
 import logging
 import os
 import traceback
@@ -190,39 +191,6 @@ class BasicAgent:
          self.session_conversations[sessionId].append({"role": "user", "content": user_query})
          print(f"发起的conversation: {self.session_conversations[sessionId]}")
 
-    def modify_match_function_parameters(self, tc, sessionId):
-        """
-        修改函数中的需要被替换的参数
-        :param tc:  {'function': {'arguments': '{"keyword": "LNG"}', 'name': 'knowledgeRetrieval_query_RAG_by_keyword'}, 'id': 'call_0_468c03da-b7ee-40f9-9443-336822ad3f72', 'type': 'function'}
-        :return:
-        """
-        print(f"modify_match_function_parameters：检查是否需要对工具进行参数的修改, sessionId: {sessionId}, 参数是: {tc}")
-        # 工具在要进行修改参数的列表中，那么就修改工具的参数
-        function_name = tc["function"]["name"]
-        if function_name in MATCH_TOOL_PARAMETERS:
-            try:
-                change_parameters = MATCH_TOOL_PARAMETERS[function_name]  # 需要修改的参数名称有哪些
-                rag_parameters = base64_to_dict(sessionId)  # rag_parameters是参数的值
-                print(
-                    f"函数{function_name}的参数要被MCP调用之前进行额外的修改, 需要修改的参数是: {change_parameters}, 通过sessionId传入的参数是:{rag_parameters}")
-                # 额外添加tc的function中的arguments中的值
-                fc_arguments = tc["function"]["arguments"]
-                fc_arguments_dict = json.loads(fc_arguments)
-                for change_parameter in change_parameters:
-                    if change_parameter in rag_parameters:
-                        fc_arguments_dict[change_parameter] = rag_parameters[change_parameter]
-                    else:
-                        print(f"Warning: {function_name}中的参数需要被修改，但是用户的sessionId中没有传入对应的参数: {sessionId}")
-                # 变回字符串
-                tc["function"]["arguments"] = json.dumps(fc_arguments_dict, ensure_ascii=False)
-                return tc
-            except Exception as e:
-                print(f"Error: 错误， 进行参数修改时发生了错误, {e}，不对参数进行修改")
-                return tc
-        else:
-            print(f"调用的工具{function_name}不需要进行额外的修改，因为没有匹配到MATCH_TOOL_PARAMETERS")
-            return tc
-
     async def _stream_response_generator(self, sessionId):
          """Handles the streaming response logic (async generator)."""
          #分5种返回类型，1. reasoning, 2. normal,  4. tool_call, 5. tool_result
@@ -260,23 +228,15 @@ class BasicAgent:
                          for tc in tool_calls:
                              if tc.get("function", {}).get("name"):
                                  # 对工具进行参数的修改
-                                 task = asyncio.create_task(process_tool_call(tc, self.servers, self.quiet_mode))
-
-                                 # 每1秒 yield 一次“running”直到 task 完成
-                                 while not task.done():
-                                     await asyncio.sleep(1)
-                                     yield {
-                                         "role": "assistant",
-                                         "text": " ",  # 表示调用工具分析中，抛出一些空的内容
-                                         "type": "reasoning"
-                                     }
-
-                                 # 一旦任务完成
-                                 result = await task
+                                 result = await process_tool_call(tc, self.servers, self.quiet_mode) # AWAIT valid here
                                  if result:
+                                     # 这里是工具的调用结果，那么只需要部分数据添加到LLM的会话中
+                                     new_res = copy.deepcopy(result)
+                                     if "data" in result:
+                                         result.pop("data")
                                      self.session_conversations[sessionId].append(result)
                                      tool_calls_processed = True
-                                     yield {"text": f"{json.dumps(result)}", "type": "tool_result"}
+                                     yield {"text": f"{json.dumps(new_res)}", "type": "tool_result"}
              if not tool_calls_processed:
                  break
 
