@@ -133,6 +133,8 @@ npm run dev
 
 #### 5. UI Example
 ![MultiAgentHomePage](docs/images/MultiAgentHomePage.png)
+![RAG_reference1](docs/images/RAG_reference1.png)
+![RAG_reference2](docs/images/RAG_reference2.png)
 
 ## Multi-Agent Call Flow
 ```mermaid
