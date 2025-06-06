@@ -1,3 +1,8 @@
+# 工具的结果给大模型时的处理
+TOOL_RESULT_HANDLE=tool_result.py
+# 工具的结果返回给前端时的处理
+DECODE_TOOL=decode_tool.py
+
 #如果使用deepseek模型，python main.py --provider deepseek --model deepseek-chat
 DEEPSEEK_API_KEY=sk-xxxx
 
