@@ -18,6 +18,7 @@ dependencies = [
     "cachetools",
     "asyncclick",
     "lmstudio",
+    "openai",
     "google-genai>=1.10.0",
 ]
 
