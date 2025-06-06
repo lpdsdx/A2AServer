@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import FormComponent from './FormDisplay';
+import ResearchDisplay from './ResearchDisplay';
+import MessageRenderer from './MessageRenderer';
 import { sendTaskStreaming, sendTaskNonStreaming, getTaskResult } from '../services/a2aApiService';
 
 
@@ -12,13 +14,45 @@ function ChatInterface({ agentCard }) {
   const currentStreamingMessageIdRef = useRef(null);
   const abortStreamingRef = useRef(null);
   const [sessionId, setSessionId] = useState('');
+  //思考的数据
   const [thinkingMessages, setThinkingMessages] = useState({});
+  // 状态的数据
+  const [statusMessages, setStatusMessages] = useState({});
   const [isThinkingCollapsed, setIsThinkingCollapsed] = useState({});
+  const [researchResults, setResearchResults] = useState({});
+  //根据researchResults的变化更新referenceMap
+  const [referenceMap, setReferenceMap] = useState({});
+
+  useEffect(() => {
+    // 检查 researchResults 是否有效并包含 data
+    if (researchResults && Object.keys(researchResults).length > 0) {
+      const newMap = {};
+
+      Object.values(researchResults).forEach((results) => {
+        // 遍历 results 数组中的每个 result
+        results.forEach((result) => {
+          if (result.data && Array.isArray(result.data.data)) {
+            result.data.data.forEach((item) => {
+              item.match_sentences.forEach((sentence_info) => {
+                sentence_info["title"] = item.title; // 添加标题信息
+                newMap[sentence_info.id] = sentence_info;
+              });
+            });
+          }
+        });
+      });
+
+      setReferenceMap(newMap);
+    } else {
+      setReferenceMap({});
+    }
+  }, [researchResults]);
 
   useEffect(() => {
     setSessionId(uuidv4());
     setMessages([]);
     setThinkingMessages({});
+    setStatusMessages({});
     setIsThinkingCollapsed({});
   }, [agentCard]);
 
@@ -49,6 +83,7 @@ function ChatInterface({ agentCard }) {
     const agentMessage = { id: uuidv4(), type: 'agent', text: '', isStreaming: true, thinking: [] };
     setMessages((prev) => [...prev, userMessage, agentMessage]);
     setThinkingMessages((prev) => ({ ...prev, [agentMessage.id]: [] }));
+    setStatusMessages((prev) => ({ ...prev, [agentMessage.id]: [] }));
     setIsThinkingCollapsed((prev) => ({ ...prev, [agentMessage.id]: false }));
 
     currentStreamingMessageIdRef.current = agentMessage.id;
@@ -58,7 +93,7 @@ function ChatInterface({ agentCard }) {
       payload,
       (streamEvent) => {
         console.log('接收到流事件：', streamEvent);
-
+        //工具的调用和获取工具的结果，都作为setStatusMessages的内容
         if (streamEvent.result?.status?.state === 'working' && streamEvent.result?.status?.message) {
           streamEvent.result.status.message.parts.forEach((part) => {
             if (part.type === 'text' && part.text) {
@@ -66,6 +101,27 @@ function ChatInterface({ agentCard }) {
                 ...prev,
                 [agentMessage.id]: [...(prev[agentMessage.id] || []), part.text],
               }));
+              console.log('thinkingMessages', thinkingMessages);
+            } else if (part.type === 'data' && part.data?.type === 'tool_calls') {
+              const toolCalls = part.data.data;
+              const displayMessages = toolCalls.map((toolCall) => toolCall.display).join('\n');
+              setStatusMessages((prev) => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), displayMessages],
+              }));
+              console.log('Form statusMessages', statusMessages);
+            } else if (part.type === 'data' && part.data?.type === 'tool_result') {
+              const toolResults = part.data.data;
+              setResearchResults(prev => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), ...toolResults]
+              }));
+              const displayMessages = toolResults.map((toolRes) => toolRes.display).join('\n');
+              setStatusMessages((prev) => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), displayMessages],
+              }));
+              console.log('Form statusMessages', statusMessages);
             }
           });
         }
@@ -146,134 +202,100 @@ function ChatInterface({ agentCard }) {
       },
     };
 
-    if (agentCard.capabilities.streaming) {
-      currentStreamingMessageIdRef.current = agentMessage.id;
 
-      abortStreamingRef.current = sendTaskStreaming(
-        agentEndpointUrl,
-        payload,
-        (streamEvent) => {
-          console.log('接收到流事件：', streamEvent);
+    currentStreamingMessageIdRef.current = agentMessage.id;
 
-          if (streamEvent.result?.status?.state === 'working' && streamEvent.result?.status?.message) {
-            streamEvent.result.status.message.parts.forEach((part) => {
-              if (part.type === 'text' && part.text) {
-                setThinkingMessages((prev) => ({
-                  ...prev,
-                  [agentMessage.id]: [...(prev[agentMessage.id] || []), part.text],
-                }));
-              }
-            });
-          }
+    abortStreamingRef.current = sendTaskStreaming(
+      agentEndpointUrl,
+      payload,
+      (streamEvent) => {
+        console.log('接收到流事件：', streamEvent);
 
-          if (streamEvent.result?.artifact) {
-            const { parts, append } = streamEvent.result.artifact;
-            parts.forEach((part) => {
-              if (part.type === 'text' && part.text) {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === agentMessage.id
-                      ? {
-                          ...msg,
-                          text: append ? msg.text + part.text : part.text,
-                          isStreaming: !streamEvent.result.artifact.lastChunk,
-                        }
-                      : msg
-                  )
-                );
-              } else if (part.type === 'data' && part.data?.type === 'form') {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === agentMessage.id
-                      ? { ...msg, form: part.data, isStreaming: false }
-                      : msg
-                  )
-                );
-              }
-            });
-          }
+        if (streamEvent.result?.status?.state === 'working' && streamEvent.result?.status?.message) {
+          streamEvent.result.status.message.parts.forEach((part) => {
+            if (part.type === 'text' && part.text) {
+              setThinkingMessages((prev) => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), part.text],
+              }));
+            } else if (part.type === 'data' && part.data?.type === 'tool_calls') {
+              const toolCalls = part.data.data;
+              const displayMessages = toolCalls.map((toolCall) => toolCall.display).join('');
+              setStatusMessages((prev) => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), displayMessages],
+              }));
+              console.log('statusMessage tool call', statusMessages);
+            } else if (part.type === 'data' && part.data?.type === 'tool_result') {
+              const toolResults = part.data.data;
+              setResearchResults(prev => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), ...toolResults]
+              }));
+              const displayMessages = toolResults.map((toolRes) => toolRes.display).join('');
+              setStatusMessages((prev) => ({
+                ...prev,
+                [agentMessage.id]: [...(prev[agentMessage.id] || []), displayMessages],
+              }));
+              console.log('statusMessages tool result', statusMessages);
+            }
+          });
+        }
 
-          if (
-            streamEvent.result?.final ||
-            streamEvent.result?.status?.state === 'completed' ||
-            streamEvent.result?.status?.state === 'input-required'
-          ) {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === agentMessage.id ? { ...msg, isStreaming: false } : msg
-              )
-            );
-            setIsSending(false);
-          }
-        },
-        (streamError) => {
-          console.error('流式传输错误：', streamError);
-          setError(`流式传输错误：${streamError.message}`);
+        if (streamEvent.result?.artifact) {
+          const { parts, append } = streamEvent.result.artifact;
+          parts.forEach((part) => {
+            if (part.type === 'text' && part.text) {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === agentMessage.id
+                    ? {
+                        ...msg,
+                        text: append ? msg.text + part.text : part.text,
+                        isStreaming: !streamEvent.result.artifact.lastChunk,
+                      }
+                    : msg
+                )
+              );
+            } else if (part.type === 'data' && part.data?.type === 'form') {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === agentMessage.id
+                    ? { ...msg, form: part.data, isStreaming: false }
+                    : msg
+                )
+              );
+            }
+          });
+        }
+
+        if (
+          streamEvent.result?.final ||
+          streamEvent.result?.status?.state === 'completed' ||
+          streamEvent.result?.status?.state === 'input-required'
+        ) {
           setMessages((prev) =>
             prev.map((msg) =>
-              msg.id === agentMessage.id
-                ? { ...msg, text: `错误：${streamError.message}`, isStreaming: false }
-                : msg
+              msg.id === agentMessage.id ? { ...msg, isStreaming: false } : msg
             )
           );
           setIsSending(false);
         }
-      );
-    } else {
-      try {
-        const initialResponse = await sendTaskNonStreaming(agentEndpointUrl, payload);
-        let agentResponse = { text: '处理中...', form: null };
-
-        if (initialResponse.error) {
-          throw new Error(`Agent 错误：${initialResponse.error.message}`);
-        }
-
-        if (initialResponse.result?.status?.state === 'completed') {
-          const textPart = initialResponse.result.status.message?.parts.find(
-            (p) => p.type === 'text'
-          );
-          const formPart = initialResponse.result.artifact?.parts.find(
-            (p) => p.type === 'data' && p.data?.type === 'form'
-          );
-          agentResponse.text = textPart?.text || '无文本内容。';
-          agentResponse.form = formPart?.data || null;
-        } else {
-          const finalTaskResponse = await getTaskResult(agentEndpointUrl, taskId);
-          if (finalTaskResponse.result?.status?.message || finalTaskResponse.result?.artifact) {
-            const textPart = finalTaskResponse.result.status.message?.parts.find(
-              (p) => p.type === 'text'
-            );
-            const formPart = finalTaskResponse.result.artifact?.parts.find(
-              (p) => p.type === 'data' && p.data?.type === 'form'
-            );
-            agentResponse.text = textPart?.text || '最终结果无文本。';
-            agentResponse.form = formPart?.data || null;
-          } else if (finalTaskResponse.error) {
-            throw new Error(`拉取任务失败：${finalTaskResponse.error.message}`);
-          }
-        }
-
+      },
+      (streamError) => {
+        console.error('流式传输错误：', streamError);
+        setError(`流式传输错误：${streamError.message}`);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === agentMessage.id
-              ? { ...msg, text: agentResponse.text, form: agentResponse.form, isStreaming: false }
+              ? { ...msg, text: `错误：${streamError.message}`, isStreaming: false }
               : msg
           )
         );
-      } catch (err) {
-        console.error('非流式错误：', err);
-        setError(`错误：${err.message}`);
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === agentMessage.id
-              ? { ...msg, text: `错误：${err.message}`, isStreaming: false }
-              : msg
-          )
-        );
-      } finally {
         setIsSending(false);
       }
-    }
+    );
+
   };
 
   useEffect(() => {
@@ -287,7 +309,7 @@ function ChatInterface({ agentCard }) {
   const messagesEndRef = useRef(null);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, thinkingMessages]);
+  }, [messages, thinkingMessages, statusMessages]);
 
   if (!agentCard) {
     return (
@@ -343,6 +365,17 @@ function ChatInterface({ agentCard }) {
                 msg.type === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800'
               }`}
             >
+              {msg.type === 'agent' && statusMessages[msg.id]?.length > 0 && (
+                <div className="mb-3">
+                  <div className="mt-2 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800 border border-yellow-200">
+                    <ul className="list-disc pl-5">
+                      {statusMessages[msg.id].map((status, idx) => (
+                        <p key={idx} className="mb-1 whitespace-pre-wrap">{status}</p>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
               {msg.type === 'agent' && thinkingMessages[msg.id]?.length > 0 && (
                 <div className="mb-3">
                   <button
@@ -385,10 +418,21 @@ function ChatInterface({ agentCard }) {
                   messageId={msg.id}
                 />
               ) : (
-                <p className="whitespace-pre-wrap text-base">
-                  {msg.text || (msg.isStreaming && !msg.text ? 'Thinking...' : '')}
-                  {msg.isStreaming && <span className="animate-pulse">▍</span>}
-                </p>
+                <div className="text-lg leading-relaxed">
+                  {msg.text ? (
+                    <MessageRenderer text={msg.text} referenceMap={referenceMap} />
+                  ) : (
+                    msg.isStreaming ? (
+                      <span className="text-lg leading-relaxed">Thinking...<span className="animate-pulse">▍</span></span>
+                    ) : null
+                  )}
+                </div>
+              )}
+              {/* 显示每个数据库的搜索结果的组件 */}
+              {msg.type === 'agent' && !msg.isStreaming && researchResults[msg.id] && researchResults[msg.id].length > 0 && (
+                <div className="mt-4">
+                  <ResearchDisplay data={researchResults[msg.id]} />
+                </div>
               )}
             </div>
             {msg.type === 'user' && (

@@ -29,32 +29,13 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
-
-def decode_tool_calls_to_string(raw_str: str) -> str:
-    # 解析 JSON
-    tool_calls = json.loads(raw_str)
-
-    # 解码每个 tool_call 的 arguments
-    for call in tool_calls:
-        args_str = call.get("function", {}).get("arguments", "")
-        try:
-            call["function"]["arguments"] = json.loads(args_str)
-        except json.JSONDecodeError:
-            pass  # 如果解析失败就跳过
-
-    # 返回格式化的 JSON 字符串（ensure_ascii=False 让中文显示正常）
-    return json.dumps(tool_calls, ensure_ascii=False, indent=2)
-
-
-def decode_tool_call_result_to_string(raw_str: str) -> str:
-    # tool执行的结果
-    print("decode_tool_call_result_to_string:", raw_str)
-    try:
-        calls_results = json.loads(raw_str)
-        content = calls_results.get("content", "")
-    except Exception as e:
-        logger.error(f"decode_tool_call_result_to_string error: {e}")
-    return raw_str
+if os.environ.get("DECODE_TOOL"):
+    from decode_tool import decode_tool_calls_to_string, decode_tool_result_to_string
+else:
+    def decode_tool_calls_to_string(content):
+        return content
+    def decode_tool_result_to_string(content):
+        return content
 
 
 class AgentTaskManager(InMemoryTaskManager):
@@ -162,9 +143,9 @@ class AgentTaskManager(InMemoryTaskManager):
             async for item in self.agent.stream(query, task_send_params.sessionId):
                 logger.info("返回的item: ", item)
                 if item.get("type") and item["type"] == "tool_call":
-                    content = decode_tool_calls_to_string(item["content"])
-                    logger.info(f"CALL的工具的解析结果: {content}")
-                    parts = [{"type": "text", "text": content+"\n"}]
+                    tool_data = decode_tool_calls_to_string(item["content"])
+                    logger.info(f"CALL的工具的解析结果: {tool_data}")
+                    parts = [{"type": "data", "data": tool_data}]
                     message = Message(role="agent", parts=parts)
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
@@ -175,9 +156,9 @@ class AgentTaskManager(InMemoryTaskManager):
                     logger.info(f"发送的item的更新消息是: {task_update_event}")
                     yield SendTaskStreamingResponse(id=request.id, result=task_update_event)
                 elif item.get("type") and item["type"] == "tool_result":
-                    content = decode_tool_call_result_to_string(item["content"])
-                    logger.info(f"RESULT的工具的解析结果: {content}")
-                    parts = [{"type": "text", "text": content+"\n"}]
+                    tool_data = decode_tool_result_to_string(item["content"])
+                    logger.info(f"RESULT的工具的解析结果: {tool_data}")
+                    parts = [{"type": "data", "data": tool_data}]
                     message = Message(role="agent", parts=parts)
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
@@ -189,6 +170,8 @@ class AgentTaskManager(InMemoryTaskManager):
                     yield SendTaskStreamingResponse(id=request.id, result=task_update_event)
                 elif item.get("type") and item["type"] == "reasoning":
                     content = item["content"]
+                    if content is None:
+                        content = ""
                     logger.info(f"推理的解析的结果: {content}")
                     parts = [{"type": "text", "text": content}]
                     message = Message(role="agent", parts=parts)
