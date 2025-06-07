@@ -12,6 +12,8 @@ Requires-Dist: mcp
 Requires-Dist: zhipuai
 Requires-Dist: cachetools
 Requires-Dist: asyncclick
+Requires-Dist: lmstudio
+Requires-Dist: openai
 Requires-Dist: google-genai>=1.10.0
 
 # 创建python环境

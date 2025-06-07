@@ -109,8 +109,8 @@ class ADKHostManager(ApplicationManager):
             memory_service=self._memory_service,
         )
 
-    def create_conversation(self) -> Conversation:
-        session = self._session_service.create_session(
+    async def create_conversation(self) -> Conversation:
+        session = await self._session_service.create_session(
             app_name=self.app_name, user_id=self.user_id
         )
         conversation_id = session.id

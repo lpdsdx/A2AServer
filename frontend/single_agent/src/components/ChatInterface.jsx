@@ -314,7 +314,8 @@ function ChatInterface({ agentCard }) {
   if (!agentCard) {
     return (
       <div className="p-6 text-center text-gray-500 text-lg font-medium bg-white rounded-xl shadow-lg">
-        请先选择一个智能体以开始聊天。
+        <p>请先选择一个智能体以开始聊天。</p>
+        <p className="text-sm mt-2 text-red-500">调试信息: agentCard 为空</p>
       </div>
     );
   }
