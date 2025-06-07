@@ -1,0 +1,5 @@
+2025-06-07 16:18:22,990 [INFO] __main__: Starting agent on localhost:10003
+INFO:     Started server process [92525]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://localhost:10003 (Press CTRL+C to quit)

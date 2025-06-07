@@ -197,6 +197,7 @@ class BasicAgent:
          while True:
              generator = await generate_text(self.session_conversations[sessionId], self.chosen_model, self.all_functions, stream=True)
              accumulated_text = ""
+             accumulated_normal_text = ""  # 累积普通文本
              tool_calls_processed = False
 
              async for chunk in generator: # AWAIT is used to iterate over the async generator
@@ -205,7 +206,14 @@ class BasicAgent:
                          if chunk.get("is_reasoning"):
                              yield {"text": chunk["assistant_text"], "type": "reasoning"}
                          else:
-                            yield {"text": chunk["assistant_text"], "type": "normal"} # YIELD is used in a generator
+                            # 累积普通文本，每5个字符或遇到标点符号时发送
+                            accumulated_normal_text += chunk["assistant_text"]
+                            if (len(accumulated_normal_text) >= 5 or
+                                chunk["assistant_text"] in "。！？，；：\n" or
+                                chunk["assistant_text"].strip() == ""):
+                                if accumulated_normal_text.strip():  # 只发送非空文本
+                                    yield {"text": accumulated_normal_text, "type": "normal"}
+                                accumulated_normal_text = ""
                      if not chunk.get("is_reasoning"):
                         accumulated_text += chunk["assistant_text"]
                  else:
@@ -237,6 +245,11 @@ class BasicAgent:
                                      self.session_conversations[sessionId].append(result)
                                      tool_calls_processed = True
                                      yield {"text": f"{json.dumps(new_res)}", "type": "tool_result"}
+
+             # 发送剩余的累积文本
+             if accumulated_normal_text.strip():
+                 yield {"text": accumulated_normal_text, "type": "normal"}
+
              if not tool_calls_processed:
                  break
 
@@ -332,7 +345,7 @@ class BasicAgent:
                 yield {
                     "is_task_complete": True,  # Indicate it's an intermediate part
                     "require_user_input": False,
-                    "content": " ",
+                    "content": "",  # 移除空格，使用空字符串
                     "type": "normal" # 参照 AgentTaskManager._stream_generator 条件判断逻辑修改，让 lastchunk 能够为true
                 }
             except Exception as e:
