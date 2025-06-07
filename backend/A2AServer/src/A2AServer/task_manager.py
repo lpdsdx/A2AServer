@@ -145,7 +145,10 @@ class AgentTaskManager(InMemoryTaskManager):
                 if item.get("type") and item["type"] == "tool_call":
                     tool_data = decode_tool_calls_to_string(item["content"])
                     logger.info(f"CALL的工具的解析结果: {tool_data}")
-                    parts = [{"type": "data", "data": tool_data}]
+                    if isinstance(tool_data, str):
+                        parts = [{"type": "text", "text": tool_data}]
+                    else:
+                        parts = [{"type": "data", "data": tool_data}]
                     message = Message(role="agent", parts=parts)
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
@@ -158,7 +161,10 @@ class AgentTaskManager(InMemoryTaskManager):
                 elif item.get("type") and item["type"] == "tool_result":
                     tool_data = decode_tool_result_to_string(item["content"])
                     logger.info(f"RESULT的工具的解析结果: {tool_data}")
-                    parts = [{"type": "data", "data": tool_data}]
+                    if isinstance(tool_data, str):
+                        parts = [{"type": "text", "text": tool_data}]
+                    else:
+                        parts = [{"type": "data", "data": tool_data}]
                     message = Message(role="agent", parts=parts)
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
