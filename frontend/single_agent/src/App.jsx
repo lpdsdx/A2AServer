@@ -22,10 +22,12 @@ function App() {
     setErrorCard(null);
     setAgentCard(null);
     try {
+      console.log(`正在加载代理卡片，URL: ${url}`);
       const card = await getAgentCard(url);
-      console.log(`Agent card loaded successfully: ${JSON.stringify(card)}`)
+      console.log(`代理卡片加载成功:`, card);
       setAgentCard(card);
     } catch (err) {
+      console.error(`代理卡片加载失败:`, err);
       setErrorCard(`Failed to load agent card: ${err.message}`);
       setAgentCard(null);
     } finally {
@@ -57,6 +59,16 @@ function App() {
             {errorCard}
           </div>
         )}
+
+        {/* 调试信息 */}
+        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+          <p><strong>调试信息:</strong></p>
+          <p>agentUrl: {agentUrl || '未设置'}</p>
+          <p>agentCard: {agentCard ? '已加载' : '未加载'}</p>
+          <p>isLoadingCard: {isLoadingCard ? '是' : '否'}</p>
+          <p>errorCard: {errorCard || '无错误'}</p>
+          {agentCard && <p>agentCard.name: {agentCard.name}</p>}
+        </div>
 
         {agentCard && !errorCard && (
           <>
