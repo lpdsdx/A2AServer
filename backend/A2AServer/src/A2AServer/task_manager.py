@@ -145,8 +145,32 @@ class AgentTaskManager(InMemoryTaskManager):
                 if item.get("type") and item["type"] == "tool_call":
                     tool_data = decode_tool_calls_to_string(item["content"])
                     logger.info(f"CALL的工具的解析结果: {tool_data}")
-                    parts = [{"type": "data", "data": tool_data}]
-                    message = Message(role="agent", parts=parts)
+                    # 处理不同类型的tool_data，确保最终是字典类型
+                    if isinstance(tool_data, str):
+                        try:
+                            import json
+                            parsed_data = json.loads(tool_data)
+                            # 如果解析后是列表，包装成字典
+                            if isinstance(parsed_data, list):
+                                tool_data = {"tool_calls": parsed_data}
+                            else:
+                                tool_data = parsed_data
+                        except json.JSONDecodeError:
+                            logger.error(f"无法解析工具调用数据: {tool_data}")
+                            tool_data = {"error": "无法解析工具调用数据"}
+                    elif isinstance(tool_data, list):
+                        # 如果是列表，包装成字典
+                        tool_data = {"tool_calls": tool_data}
+                    elif isinstance(tool_data, dict):
+                        # 如果已经是字典，直接使用
+                        pass
+                    else:
+                        # 其他类型，转换为字典
+                        tool_data = {"data": tool_data}
+                    # 创建符合Pydantic模型的DataPart
+                    from A2AServer.common.A2Atypes import DataPart
+                    data_part = DataPart(type="data", data=tool_data)
+                    message = Message(role="agent", parts=[data_part])
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
                         id=task_send_params.id,
@@ -158,8 +182,30 @@ class AgentTaskManager(InMemoryTaskManager):
                 elif item.get("type") and item["type"] == "tool_result":
                     tool_data = decode_tool_result_to_string(item["content"])
                     logger.info(f"RESULT的工具的解析结果: {tool_data}")
-                    parts = [{"type": "data", "data": tool_data}]
-                    message = Message(role="agent", parts=parts)
+                    # 处理不同类型的tool_data，确保最终是字典类型
+                    if isinstance(tool_data, str):
+                        try:
+                            parsed_data = json.loads(tool_data)
+                            # 如果解析后是列表，包装成字典
+                            if isinstance(parsed_data, list):
+                                tool_data = {"tool_results": parsed_data}
+                            else:
+                                tool_data = parsed_data
+                        except json.JSONDecodeError:
+                            logger.error(f"无法解析工具结果数据: {tool_data}")
+                            tool_data = {"error": "无法解析工具结果数据"}
+                    elif isinstance(tool_data, list):
+                        # 如果是列表，包装成字典
+                        tool_data = {"tool_results": tool_data}
+                    elif isinstance(tool_data, dict):
+                        # 如果已经是字典，直接使用
+                        pass
+                    else:
+                        # 其他类型，转换为字典
+                        tool_data = {"data": tool_data}
+                    # 创建符合Pydantic模型的DataPart
+                    data_part = DataPart(type="data", data=tool_data)
+                    message = Message(role="agent", parts=[data_part])
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
                         id=task_send_params.id,
@@ -173,8 +219,9 @@ class AgentTaskManager(InMemoryTaskManager):
                     if content is None:
                         content = ""
                     logger.info(f"推理的解析的结果: {content}")
-                    parts = [{"type": "text", "text": content}]
-                    message = Message(role="agent", parts=parts)
+                    # 创建符合Pydantic模型的TextPart
+                    text_part = TextPart(type="text", text=content)
+                    message = Message(role="agent", parts=[text_part])
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
                         id=task_send_params.id,
@@ -185,12 +232,14 @@ class AgentTaskManager(InMemoryTaskManager):
                     yield SendTaskStreamingResponse(id=request.id, result=task_update_event)
                 elif item.get("type") and item["type"] == "normal":  # 正常的文本内容
                     is_task_complete = item["is_task_complete"]
+                    # 初始化task_state变量
+                    task_state = TaskState.WORKING
                     if not is_task_complete:
-                        task_state = TaskState.WORKING
                         if item.get("content"):
-                            parts = [{"type": "text", "text": item["content"]}]
+                            # 创建符合Pydantic模型的TextPart
+                            text_part = TextPart(type="text", text=item["content"])
                             append_value = not is_first_token
-                            artifact = Artifact(parts=parts, index=0, append=append_value, lastChunk=False)
+                            artifact = Artifact(parts=[text_part], index=0, append=append_value, lastChunk=False)
                             # 逐条发送每个生成的内容
                             logger.info(f"发送的artifact是: {artifact}")
                             yield SendTaskStreamingResponse(
@@ -203,6 +252,8 @@ class AgentTaskManager(InMemoryTaskManager):
                             is_first_token = False
                             artifacts.append(artifact)
                     else:
+                        # 初始化task_state变量
+                        task_state = TaskState.COMPLETED
                         if isinstance(item["content"], dict):
                             if ("response" in item["content"]
                                     and "result" in item["content"]["response"]):
@@ -211,10 +262,14 @@ class AgentTaskManager(InMemoryTaskManager):
                             else:
                                 data = item["content"]
                                 task_state = TaskState.COMPLETED
-                            parts = [{"type": "data", "data": data}]
+                            # 创建符合Pydantic模型的DataPart
+                            data_part = DataPart(type="data", data=data)
+                            parts = [data_part]
                         else:
                             task_state = TaskState.COMPLETED
-                            parts = [{"type": "text", "text": item["content"]}]
+                            # 创建符合Pydantic模型的TextPart
+                            text_part = TextPart(type="text", text=item["content"])
+                            parts = [text_part]
                         logger.info(f"现在发送的parts是: {parts}")
                         artifact = Artifact(parts=parts, index=0, append=True, lastChunk=True)
                         yield SendTaskStreamingResponse(

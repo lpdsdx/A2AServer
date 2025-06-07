@@ -170,7 +170,9 @@ class ConversationServer:
     # 过滤出属于该 conversation_id 的事件
     events = [
         event for event in self.manager.events
-        if getattr(event.content, "metadata", {}).get("conversation_id") == conversation_id
+        if (hasattr(event, 'content') and event.content and
+            hasattr(event.content, 'metadata') and event.content.metadata and
+            event.content.metadata.get("conversation_id") == conversation_id)
     ]
     return QueryEventResponse(result=events)
 

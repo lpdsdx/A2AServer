@@ -1,0 +1,12 @@
+
+> single_agent@0.0.0 dev
+> vite --host
+
+
+  VITE v4.5.1  ready in 1174 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.2.245:5173/
+Browserslist: caniuse-lite is outdated. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme

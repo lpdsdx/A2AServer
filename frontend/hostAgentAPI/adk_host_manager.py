@@ -1,9 +1,12 @@
 import asyncio
 import datetime
 import json
+import logging
 import os
 from typing import Tuple, Optional, Any
 import uuid
+
+logger = logging.getLogger(__name__)
 from ServiceTypes import Conversation, Event
 from A2AServer.common.A2Atypes import (
     Message,
@@ -161,7 +164,7 @@ class ADKHostManager(ApplicationManager):
         )
         final_event: GenAIEvent | None = None
         # Determine if a task is to be resumed.
-        session = self._session_service.get_session(
+        session = await self._session_service.get_session(
             app_name='A2A', user_id='test_user', session_id=conversation_id
         )
         # Update state must happen in the event
@@ -185,7 +188,7 @@ class ADKHostManager(ApplicationManager):
         ):
             state_update['task_id'] = self._task_map[last_message_id]
         # Need to upsert session state now, only way is to append an event.
-        self._session_service.append_event(
+        await self._session_service.append_event(
             session,
             ADKEvent(
                 id=ADKEvent.new_id(),
@@ -259,6 +262,11 @@ class ADKHostManager(ApplicationManager):
             self.update_task(current_task)
             return current_task
         # Otherwise this is a Task, either new or updated
+        # 安全检查：确保task和task.id不为None
+        if not task or not hasattr(task, 'id') or task.id is None:
+            logger.error(f"task或task.id为None: {task}")
+            return None
+
         if not any(filter(lambda x: x.id == task.id, self._tasks)):
             self.attach_message_to_task(task.status.message, task.id)
             self.insert_id_trace(task.status.message)
@@ -290,9 +298,9 @@ class ADKHostManager(ApplicationManager):
                 role='agent',
                 metadata=metadata,
             )
-        elif task.status and task.status.message:
+        elif hasattr(task, 'status') and task.status and task.status.message:
             content = task.status.message
-        elif task.artifacts:
+        elif hasattr(task, 'artifacts') and task.artifacts:
             parts = []
             for a in task.artifacts:
                 parts.extend(a.parts)
@@ -302,8 +310,12 @@ class ADKHostManager(ApplicationManager):
                 metadata=metadata,
             )
         else:
+            # 安全处理：如果task没有status属性或status为None
+            status_text = "Unknown status"
+            if hasattr(task, 'status') and task.status:
+                status_text = str(task.status.state)
             content = Message(
-                parts=[TextPart(text=str(task.status.state))],
+                parts=[TextPart(text=status_text)],
                 role='agent',
                 metadata=metadata,
             )
@@ -492,7 +504,7 @@ class ADKHostManager(ApplicationManager):
                             file_uri=part.uri, mime_type=part.mimeType
                         )
                     )
-                elif content_part.bytes:
+                elif part.bytes:
                     parts.append(
                         types.Part.from_bytes(
                             data=part.bytes.encode('utf-8'),
