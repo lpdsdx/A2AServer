@@ -145,6 +145,7 @@ class AgentTaskManager(InMemoryTaskManager):
                 if item.get("type") and item["type"] == "tool_call":
                     tool_data = decode_tool_calls_to_string(item["content"])
                     logger.info(f"CALL的工具的解析结果: {tool_data}")
+<<<<<<< HEAD
                     # 处理不同类型的tool_data，确保最终是字典类型
                     if isinstance(tool_data, str):
                         try:
@@ -171,6 +172,13 @@ class AgentTaskManager(InMemoryTaskManager):
                     from A2AServer.common.A2Atypes import DataPart
                     data_part = DataPart(type="data", data=tool_data)
                     message = Message(role="agent", parts=[data_part])
+=======
+                    if isinstance(tool_data, str):
+                        parts = [{"type": "text", "text": tool_data}]
+                    else:
+                        parts = [{"type": "data", "data": tool_data}]
+                    message = Message(role="agent", parts=parts)
+>>>>>>> 284a1102a106dbcfa9e85dbc6c8cb09d5fe51a85
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
                         id=task_send_params.id,
@@ -182,6 +190,7 @@ class AgentTaskManager(InMemoryTaskManager):
                 elif item.get("type") and item["type"] == "tool_result":
                     tool_data = decode_tool_result_to_string(item["content"])
                     logger.info(f"RESULT的工具的解析结果: {tool_data}")
+<<<<<<< HEAD
                     # 处理不同类型的tool_data，确保最终是字典类型
                     if isinstance(tool_data, str):
                         try:
@@ -206,6 +215,13 @@ class AgentTaskManager(InMemoryTaskManager):
                     # 创建符合Pydantic模型的DataPart
                     data_part = DataPart(type="data", data=tool_data)
                     message = Message(role="agent", parts=[data_part])
+=======
+                    if isinstance(tool_data, str):
+                        parts = [{"type": "text", "text": tool_data}]
+                    else:
+                        parts = [{"type": "data", "data": tool_data}]
+                    message = Message(role="agent", parts=parts)
+>>>>>>> 284a1102a106dbcfa9e85dbc6c8cb09d5fe51a85
                     task_status = TaskStatus(state=TaskState.WORKING, message=message)
                     task_update_event = TaskStatusUpdateEvent(
                         id=task_send_params.id,

@@ -471,10 +471,13 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
     else:
         result_content = "\n".join(content["text"] for content in result["content"])
     logger.info(f"工具{tool_name}运行结果: {result_content}")
+<<<<<<< HEAD
 
     # 初始化data变量
     data = []
 
+=======
+>>>>>>> 284a1102a106dbcfa9e85dbc6c8cb09d5fe51a85
     if os.environ.get("TOOL_RESULT_HANDLE"):
         # 动态加载todo
         from tool_result import tool_process_result
@@ -485,11 +488,20 @@ async def process_tool_call(tc: Dict, servers: Dict[str, MCPClient], quiet_mode:
         else:
             data = tool_res
             result_content = tool_res
+<<<<<<< HEAD
 
+=======
+        return {
+            "role": "tool",
+            "tool_call_id": tc["id"],
+            "name": func_name,
+            "content": result_content,
+            "data": data  #函数的结果的原始数据
+        }
+>>>>>>> 284a1102a106dbcfa9e85dbc6c8cb09d5fe51a85
     return {
         "role": "tool",
         "tool_call_id": tc["id"],
         "name": func_name,
         "content": result_content,
-        "data": data  #函数的结果的原始数据
     }
