@@ -27,7 +27,7 @@ class A2AClientTestCase(unittest.IsolatedAsyncioTestCase):
     """
     测试 A2A 客户端的功能
     """
-    AGENT_URL = "http://localhost:10003"
+    AGENT_URL = "http://localhost:10004"
     if os.environ.get("AGENT_URL"):
         AGENT_URL = os.environ.get("AGENT_URL")
     async def asyncSetUp(self):
