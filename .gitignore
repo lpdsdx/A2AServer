@@ -1,0 +1,5 @@
+# 本地密钥文件
+backend/AgentRAG/.env
+backend/DeepSearch/.env
+backend/LNGExpert/.env
+frontend/hostAgentAPI/.env
